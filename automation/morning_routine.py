@@ -29,10 +29,11 @@ Keep it concise and actionable."""
 
 def schedule_routines():
     """Schedule automated routines"""
-    schedule.every().day.at("08:00").do(morning_routine)
+    # schedule.every().day.at("08:00").do(morning_routine)
+    morning_routine()  # Run once immediately
     
-    print("⏰ Scheduled: Morning routine at 8:00 AM")
-    print("Running scheduler... (Ctrl+C to stop)\n")
+    # print("⏰ Scheduled: Morning routine at 8:00 AM")
+    # print("Running scheduler... (Ctrl+C to stop)\n")
     
     while True:
         schedule.run_pending()

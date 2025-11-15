@@ -40,18 +40,34 @@ Be conversational, helpful, and proactive. You're a thought partner."""
         system_prompt = self.base_system_prompt
         
         if include_memories:
-            # Search for relevant memories
-            memories = self.memory.recall(user_message, n_results=3)
-            if memories:
-                system_prompt += "\n\nRelevant memories:\n"
-                for mem in memories:
-                    system_prompt += f"- {mem['entity']}: {mem['fact']}\n"
+            # IMPROVED: Search for relevant memories with broader query
+            memories = self.memory.recall(user_message, n_results=5)
+            
+            # ALSO: Get recent facts regardless of search
+            cursor = self.memory.conn.cursor()
+            cursor.execute("SELECT entity, fact FROM facts ORDER BY created_at DESC LIMIT 10")
+            recent_facts = cursor.fetchall()
+            
+            if memories or recent_facts:
+                system_prompt += "\n\n=== WHAT YOU KNOW ABOUT THE USER ===\n"
+                
+                # Add search results
+                if memories:
+                    system_prompt += "\nRelevant context:\n"
+                    for mem in memories:
+                        system_prompt += f"- {mem['entity']}: {mem['fact']}\n"
+                
+                # Add recent facts for broader context
+                if recent_facts:
+                    system_prompt += "\nRecent information about user:\n"
+                    for row in recent_facts:
+                        system_prompt += f"- {row[0]}: {row[1]}\n"
             
             # Add active goals
             goals = self.memory.get_active_goals()
             if goals:
                 system_prompt += "\n\nUser's active goals:\n"
-                for goal in goals[:3]:
+                for goal in goals[:5]:
                     system_prompt += f"- {goal['goal']}"
                     if goal['deadline']:
                         system_prompt += f" (deadline: {goal['deadline']})"
@@ -60,7 +76,7 @@ Be conversational, helpful, and proactive. You're a thought partner."""
             # Add preferences
             writing_style = self.memory.get_preference("writing_style")
             if writing_style:
-                system_prompt += f"\n\nUser's writing style: {writing_style}\n"
+                system_prompt += f"\n\nUser's preferred writing style: {writing_style}\n"
         
         messages = conversation_history or []
         messages.append({"role": "user", "content": user_message})

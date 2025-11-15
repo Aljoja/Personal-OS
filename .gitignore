@@ -1,0 +1,8 @@
+.env
+brain/*.db
+brain/embeddings/
+__pycache__/
+*.pyc
+logs/*.log
+venv/
+env/

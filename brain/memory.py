@@ -22,11 +22,9 @@ class Memory:
         self.conn.row_factory = sqlite3.Row
         self._init_db()
         
-        # ChromaDB for semantic search
-        self.chroma_client = chromadb.Client(Settings(
-            persist_directory=str(embeddings_path),
-            anonymized_telemetry=False
-        ))
+        # ChromaDB for semantic search (PERSISTENT!)
+        embeddings_path_str = str(Path(embeddings_path).absolute())
+        self.chroma_client = chromadb.PersistentClient(path=embeddings_path_str)
         
         # Collections
         self.facts = self.chroma_client.get_or_create_collection("facts")
@@ -145,15 +143,69 @@ class Memory:
         return row['value'] if row else None
     
     def save_conversation(self, conversation: List[Dict], topic: str = None):
-        """Save a conversation"""
-        conv_id = f"conv_{datetime.now().timestamp()}"
+        """Save a conversation to both ChromaDB AND text file"""
+        if not conversation:
+            return
+        
+        from datetime import datetime
+        from pathlib import Path
+        
+        timestamp = datetime.now()
+        conv_id = f"conv_{timestamp.timestamp()}"
         conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation])
         
-        self.conversations.add(
-            documents=[conv_text],
-            metadatas=[{"topic": topic or "general", "timestamp": datetime.now().isoformat()}],
-            ids=[conv_id]
-        )
+        # 1. Save to ChromaDB (for semantic search)
+        try:
+            self.conversations.add(
+                documents=[conv_text],
+                metadatas=[{"topic": topic or "general", "timestamp": timestamp.isoformat()}],
+                ids=[conv_id]
+            )
+        except Exception as e:
+            print(f"[WARNING] ChromaDB save failed: {e}")
+        
+        # 2. ALSO save to text file (for easy reading)
+        try:
+            # Create dated folder
+            date_folder = timestamp.strftime('%Y-%m-%d')  # 2024-11-16
+            text_folder = Path("conversations") / date_folder
+            text_folder.mkdir(parents=True, exist_ok=True)
+            text_folder.mkdir(exist_ok=True)
+            
+            # Clean topic for filename
+            clean_topic = (topic or "general").replace(" ", "_").replace("/", "-")
+            filename = f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{clean_topic}.txt"
+            filepath = text_folder / filename
+            
+            # Write conversation to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write("="*70 + "\n")
+                f.write("PERSONAL OS CONVERSATION LOG\n")
+                f.write("="*70 + "\n")
+                f.write(f"Date: {timestamp.strftime('%A, %B %d, %Y')}\n")
+                f.write(f"Time: {timestamp.strftime('%H:%M:%S')}\n")
+                f.write(f"Topic: {topic or 'general'}\n")
+                f.write("="*70 + "\n\n")
+                
+                # Write each message with formatting
+                for msg in conversation:
+                    role = "YOU" if msg['role'] == 'user' else "CLAUDE"
+                    content = msg['content']
+                    
+                    f.write(f"{role}:\n")
+                    f.write(f"{content}\n")
+                    f.write("\n" + "-"*70 + "\n\n")
+                
+                f.write("="*70 + "\n")
+                f.write("END OF CONVERSATION\n")
+                f.write("="*70 + "\n")
+            
+            print(f"💾 Saved to: conversations/{filename}")
+            
+        except Exception as e:
+            print(f"[WARNING] Text file save failed: {e}")
+        
+        return conv_id
     
     def add_goal(self, goal: str, deadline: str = None):
         """Add a goal"""
@@ -203,3 +255,61 @@ class Memory:
                 })
         
         return files
+    
+    def recall_conversations(self, query: str, n_results: int = 3) -> List[Dict]:
+        """Search past conversations"""
+        try:
+            results = self.conversations.query(
+                query_texts=[query],
+                n_results=n_results
+            )
+            
+            convos = []
+            if results['documents'] and results['documents'][0]:
+                for doc, metadata in zip(results['documents'][0], results['metadatas'][0]):
+                    convos.append({
+                        'conversation': doc,
+                        'topic': metadata.get('topic'),
+                        'timestamp': metadata.get('timestamp')
+                    })
+            
+            return convos
+        except Exception as e:
+            print(f"[ERROR] recall_conversations failed: {e}")
+            return []
+        
+    def get_conversations_by_date(self, date_str: str = None) -> List[Dict]:
+        """Get conversations from a specific date
+        
+        Args:
+            date_str: Date in format "2024-11-16" or None for today
+        """
+        from datetime import datetime, date
+        
+        if date_str is None:
+            date_str = date.today().isoformat()
+        
+        try:
+            all_convs = self.conversations.get()
+            
+            if not all_convs['ids']:
+                return []
+            
+            # Filter by date
+            matching = []
+            for doc, meta in zip(all_convs['documents'], all_convs['metadatas']):
+                timestamp = meta.get('timestamp', '')
+                if timestamp.startswith(date_str):
+                    matching.append({
+                        'conversation': doc,
+                        'topic': meta.get('topic'),
+                        'timestamp': timestamp
+                    })
+            
+            # Sort by timestamp
+            matching.sort(key=lambda x: x['timestamp'])
+            
+            return matching
+        except Exception as e:
+            print(f"[ERROR] get_conversations_by_date failed: {e}")
+            return []

@@ -22,33 +22,36 @@ class PersonalClaude:
         self.memory = Memory()
         
         self.base_system_prompt = """You are a personal AI operating system with persistent memory.
+        
+                    Your capabilities:
+                    - Remember facts when user says "remember that..."
+                    - Recall information when asked
+                    - Apply saved preferences and styles
+                    - Help organize thoughts and decisions
+                    - Provide emotional support
+                    - Maintain context across sessions
 
-Your capabilities:
-- Remember facts when user says "remember that..."
-- Recall information when asked
-- Apply saved preferences and styles
-- Help organize thoughts and decisions
-- Provide emotional support
-- Maintain context across sessions
-
-Be conversational, helpful, and proactive. You're a thought partner."""
+                    Be conversational, helpful, and proactive. You're a thought partner."""
     
     def chat(self, user_message: str, conversation_history: List[Dict] = None,
-             include_memories: bool = True) -> str:
+            include_memories: bool = True) -> str:
         """Chat with memory-augmented context"""
         
         system_prompt = self.base_system_prompt
         
         if include_memories:
-            # IMPROVED: Search for relevant memories with broader query
+            # Search for relevant FACTS
             memories = self.memory.recall(user_message, n_results=5)
             
-            # ALSO: Get recent facts regardless of search
+            # ALSO search for relevant CONVERSATIONS
+            past_conversations = self.memory.recall_conversations(user_message, n_results=2)
+            
+            # Get recent facts
             cursor = self.memory.conn.cursor()
             cursor.execute("SELECT entity, fact FROM facts ORDER BY created_at DESC LIMIT 10")
             recent_facts = cursor.fetchall()
             
-            if memories or recent_facts:
+            if memories or recent_facts or past_conversations:
                 system_prompt += "\n\n=== WHAT YOU KNOW ABOUT THE USER ===\n"
                 
                 # Add search results
@@ -57,11 +60,20 @@ Be conversational, helpful, and proactive. You're a thought partner."""
                     for mem in memories:
                         system_prompt += f"- {mem['entity']}: {mem['fact']}\n"
                 
-                # Add recent facts for broader context
+                # Add recent facts
                 if recent_facts:
-                    system_prompt += "\nRecent information about user:\n"
+                    system_prompt += "\nRecent information:\n"
                     for row in recent_facts:
                         system_prompt += f"- {row[0]}: {row[1]}\n"
+                
+                # ADD PAST CONVERSATIONS
+                if past_conversations:
+                    system_prompt += "\n\nRelevant past conversations:\n"
+                    for conv in past_conversations:
+                        # Show a preview
+                        preview = conv['conversation'][:300] + "..."
+                        timestamp = conv['timestamp'][:10] if conv['timestamp'] else "Unknown"
+                        system_prompt += f"\n[{timestamp}]\n{preview}\n"
             
             # Add active goals
             goals = self.memory.get_active_goals()
@@ -76,7 +88,7 @@ Be conversational, helpful, and proactive. You're a thought partner."""
             # Add preferences
             writing_style = self.memory.get_preference("writing_style")
             if writing_style:
-                system_prompt += f"\n\nUser's preferred writing style: {writing_style}\n"
+                system_prompt += f"\n\nUser's writing style: {writing_style}\n"
         
         messages = conversation_history or []
         messages.append({"role": "user", "content": user_message})

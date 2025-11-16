@@ -43,6 +43,11 @@ class PersonalOS:
                     continue
                 
                 if user_input.lower() == 'quit':
+                    # Save conversation periodically
+                    # if len(self.conversation) % 10 == 0:
+                    if self.conversation:
+                        self.memory.save_conversation(self.conversation)
+                        # print('[DEBUG] Conversation saved!')
                     print("\n👋 Goodbye!")
                     break
                 
@@ -107,10 +112,6 @@ class PersonalOS:
                 # Update conversation history
                 self.conversation.append({"role": "user", "content": user_input})
                 self.conversation.append({"role": "assistant", "content": response})
-                
-                # Save conversation periodically
-                if len(self.conversation) % 10 == 0:
-                    self.memory.save_conversation(self.conversation)
             
             except KeyboardInterrupt:
                 print("\n\n👋 Goodbye!")

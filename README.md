@@ -93,7 +93,11 @@ personal-os/
 ├── files/
 │   └── watched/       # Drop files here
 ├── automation/
+│   ├── __init__.py
 │   ├── file_watcher.py
 │   └── morning_routine.py
+├── conversations/     # Saved conversations in txt file
+├── logs/               # Unused
+├── prompts/            # Unused
 └── main.py            # Start here
 ```

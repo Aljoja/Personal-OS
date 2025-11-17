@@ -1,5 +1,18 @@
+# Personal OS Requirements
+
+# Core dependencies
 anthropic>=0.18.0
 python-dotenv>=1.0.0
-watchdog>=3.0.0
-schedule>=1.2.0
+
+# Database and vector storage
 chromadb>=0.4.0
+sqlite3  # Usually included with Python
+
+# Optional: For better embedding models
+sentence-transformers>=2.2.0
+
+# Optional: For file watching (if implementing automation)
+watchdog>=3.0.0
+
+# Optional: For scheduling
+schedule>=1.2.0

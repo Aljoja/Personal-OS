@@ -1,0 +1,155 @@
+PersonalOS/
+├── PersonalOS.svg
+├── README.md
+├── __init__.py
+├── automation
+│   ├── __init__.py
+│   ├── file_watcher.py
+│   │     └─ Class: FileHandler
+│   │         └─ __init__() → calls: set
+│   │         └─ on_created() → calls: Path, add, len, open, print, read, sleep, strip, summarize_file
+│   │     └─ start_watching() → calls: FileHandler, Observer, Path, PersonalClaude, absolute, join, mkdir, print, schedule, sleep, start, stop, str
+│   └── morning_routine.py
+│         └─ morning_routine() → calls: PersonalClaude, chat, now, print, strftime
+│         └─ schedule_routines() → calls: morning_routine, run_pending, sleep
+├── brain
+│   ├── __init__.py
+│   ├── claude_client.py
+│   │     └─ Class: PersonalClaude
+│   │         └─ __init__() → calls: Anthropic, Memory, ValueError, getenv, print, startswith
+│   │         └─ chat() → calls: _deduplicate_facts, _process_memory_commands, append, create, extend, get, get_active_goals, get_preference, get_recent_facts, len, list, print, recall, recall_conversations
+│   │         └─ _deduplicate_facts() → calls: add, append, get, lower, set, strip
+│   │         └─ _process_memory_commands() → calls: _extract_entity, group, lower, print, remember_fact, search, strip
+│   │         └─ _extract_entity() → calls: group, join, lower, match, search, split, startswith
+│   │         └─ apply_writing_style() → calls: create, get_preference, print
+│   │         └─ summarize_file() → calls: create, index_file, len, print
+│   ├── embeddings
+│   │   ├── c40dfb63-331d-49e3-850d-a28dc3b8a310
+│   │   │   ├── data_level0.bin
+│   │   │   ├── header.bin
+│   │   │   ├── length.bin
+│   │   │   └── link_lists.bin
+│   │   └── chroma.sqlite3
+│   ├── knowledge.db
+│   ├── learning_tracker.py
+│   │     └─ Class: LearningTracker
+│   │         └─ __init__() → calls: Path, _init_tables, absolute, connect, str
+│   │         └─ _init_tables() → calls: commit, cursor, execute
+│   │         └─ add_skill() → calls: commit, cursor, execute, fetchone, now, print, timedelta
+│   │         └─ get_all_skills() → calls: cursor, dict, execute, fetchall
+│   │         └─ get_skill_details() → calls: cursor, dict, execute, fetchall, fetchone
+│   │         └─ log_session() → calls: _calculate_next_review, commit, cursor, execute
+│   │         └─ add_learning_item() → calls: commit, cursor, execute, now, timedelta
+│   │         └─ get_items_due_for_review() → calls: cursor, dict, execute, fetchall
+│   │         └─ record_review() → calls: _calculate_next_review_for_item, commit, cursor, execute
+│   │         └─ _calculate_next_review() → calls: get, now, timedelta
+│   │         └─ _calculate_next_review_for_item() → calls: get, now, timedelta
+│   │         └─ get_daily_review_summary() → calls: cursor, dict, execute, fetchone
+│   │         └─ search_learning_items() → calls: cursor, dict, execute, fetchall
+│   │         └─ add_milestone() → calls: commit, cursor, execute
+│   │         └─ get_milestones() → calls: cursor, dict, execute, fetchall
+│   │         └─ complete_milestone() → calls: commit, cursor, execute
+│   │         └─ get_learning_stats() → calls: cursor, dict, execute, fetchall, fetchone, round
+│   │         └─ close() → calls: close, hasattr
+│   │         └─ __del__() → calls: close
+│   └── memory.py
+│         └─ Class: Memory
+│             └─ __init__() → calls: Path, PersistentClient, _init_db, absolute, connect, get_or_create_collection, mkdir, print, str
+│             └─ _init_db() → calls: commit, cursor, execute
+│             └─ remember_fact() → calls: add, commit, cursor, execute, print
+│             └─ recall() → calls: _sql_search_facts, append, get, print, query, zip
+│             └─ _sql_search_facts() → calls: append, cursor, execute, fetchall, print
+│             └─ get_recent_facts() → calls: cursor, dict, execute, fetchall, print
+│             └─ get_facts_about() → calls: cursor, dict, execute, fetchall, print
+│             └─ save_preference() → calls: commit, cursor, execute, print
+│             └─ get_preference() → calls: cursor, execute, fetchone, print
+│             └─ _extract_conversation_topic() → calls: join, lower, next, replace, split, strip
+│             └─ save_conversation() → calls: Path, _extract_conversation_topic, add, isoformat, join, mkdir, now, open, print, replace, strftime, timestamp, write
+│             └─ add_goal() → calls: commit, cursor, execute, print
+│             └─ get_active_goals() → calls: cursor, dict, execute, fetchall, print
+│             └─ index_file() → calls: Path, add, isoformat, now, print, timestamp
+│             └─ search_files() → calls: append, get, len, print, query, zip
+│             └─ recall_conversations() → calls: append, get, print, query, zip
+│             └─ get_conversations_by_date() → calls: append, get, isoformat, print, sort, startswith, today, zip
+│             └─ close() → calls: close, hasattr, print
+│             └─ __del__() → calls: close
+│             └─ __enter__()
+│             └─ __exit__() → calls: close
+├── brain.svg
+├── classes.png
+├── conversations
+│   ├── 2025-11-16
+│   │   └── 20251116_223302_general.txt
+│   └── 2025-11-17
+│       ├── 213649_do_you_know_about_me.txt
+│       └── 213650_do_you_know_about_me.txt
+├── docs
+│   ├── code-structure.py
+│   │     └─ get_function_calls() → calls: add, isinstance, set, walk
+│   │     └─ analyze_file() → calls: append, get_function_calls, isinstance, open, parse, read
+│   │     └─ print_structure() → calls: analyze_file, endswith, enumerate, isdir, join, len, listdir, print, print_structure, sorted, startswith
+│   ├── initial_fixes
+│   │   ├── BEFORE_AFTER.md
+│   │   ├── FIXES_CHANGELOG.md
+│   │   ├── INDEX.md
+│   │   ├── INSTALLATION_GUIDE.md
+│   │   ├── README_FIXES.md
+│   │   └── setup_personal_os.py
+│   │         └─ create_project() → calls: Path, absolute, items, mkdir, open, print, write
+│   └── learning_tracker
+│       ├── LEARNING_IMPLEMENTATION_SUMMARY.md
+│       ├── LEARNING_START_HERE.md
+│       ├── LEARNING_TRACKER_GUIDE.md
+│       └── LEARNING_TRACKER_README.md
+├── files
+│   └── watched
+│       └── Job Search Strategy.txt
+├── logs
+├── main.py
+│     └─ Class: PersonalOS
+│         └─ __init__() → calls: LearningTracker, Memory, PersonalClaude, register, signal
+│         └─ _signal_handler() → calls: _cleanup, exit, print
+│         └─ _cleanup() → calls: close, print, save_conversation
+│         └─ _save_conversation_if_needed() → calls: print, save_conversation
+│         └─ run() → calls: _cleanup, _learning_menu, _manage_goals, _save_conversation_if_needed, append, apply_writing_style, chat, get, input, join, lower, print, recall, remember_fact, save_conversation, save_preference, search_files, strip
+│         └─ _learning_menu() → calls: _add_learning_item, _add_new_skill, _log_learning_session, _manage_milestones, _review_items, _search_learning_items, _view_all_skills, _view_learning_stats, _view_skill_details, get_daily_review_summary, input, print, strip
+│         └─ _view_all_skills() → calls: get_all_skills, print
+│         └─ _add_new_skill() → calls: add_skill, get, input, print, strip
+│         └─ _log_learning_session() → calls: get, get_all_skills, input, int, isdigit, log_session, print, range, strip
+│         └─ _review_items() → calls: enumerate, get_items_due_for_review, input, int, isdigit, len, lower, print, range, record_review, strip
+│         └─ _add_learning_item() → calls: add_learning_item, get, get_all_skills, input, int, isdigit, print, strip
+│         └─ _search_learning_items() → calls: input, len, print, search_learning_items, strip
+│         └─ _view_skill_details() → calls: get_all_skills, get_skill_details, input, int, isdigit, len, print, strip
+│         └─ _view_learning_stats() → calls: get_learning_stats, input, int, isdigit, print, strip
+│         └─ _manage_milestones() → calls: add_milestone, complete_milestone, get_all_skills, get_milestones, input, int, isdigit, print, strip
+│         └─ _manage_goals() → calls: add_goal, get, get_active_goals, input, print, strip
+│     └─ main() → calls: PersonalOS, getenv, input, lower, print, print_exc, run, startswith, strip
+├── packages.png
+├── prompts
+│   └── saved
+├── requirements.txt
+├── test_embeddings
+│   ├── 4795ca88-ef5a-45c5-a82d-b01ba6a81d43
+│   │   ├── data_level0.bin
+│   │   ├── header.bin
+│   │   ├── length.bin
+│   │   └── link_lists.bin
+│   └── chroma.sqlite3
+└── tests
+    ├── test_fixes.py
+    │     └─ test_imports() → calls: print
+    │     └─ test_memory_initialization() → calls: Memory, Path, close, exists, get_preference, insert, print, print_exc, recall, remember_fact, rmtree, save_preference, str, unlink
+    │     └─ test_api_key() → calls: getenv, load_dotenv, print, startswith
+    │     └─ test_directory_structure() → calls: Path, exists, mkdir, print
+    │     └─ test_conversation_deduplication() → calls: Path, PersonalClaude, _deduplicate_facts, insert, len, print, str
+    │     └─ test_memory_command_patterns() → calls: any, len, lower, print, search
+    │     └─ main() → calls: append, len, print, sum, test_func
+    ├── test_fixes_windows.py
+    │     └─ test_imports() → calls: print
+    │     └─ test_memory_initialization() → calls: Memory, Path, close, exists, get_preference, insert, print, print_exc, range, recall, remember_fact, rmtree, save_preference, sleep, str, unlink
+    │     └─ test_api_key() → calls: getenv, load_dotenv, print, startswith
+    │     └─ test_directory_structure() → calls: Path, exists, mkdir, print
+    │     └─ test_conversation_deduplication() → calls: Path, PersonalClaude, _deduplicate_facts, insert, len, print, str
+    │     └─ test_memory_command_patterns() → calls: any, len, lower, print, search
+    │     └─ main() → calls: append, len, print, sum, test_func
+    └── test_saved_conversations.py

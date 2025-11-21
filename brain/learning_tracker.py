@@ -11,8 +11,14 @@ class LearningTracker:
     """Track learning progress with spaced repetition"""
     
     def __init__(self, db_path: str = "brain/knowledge.db"):
+
         self.db_path = Path(db_path).absolute()
+
+        # Create connection
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        # Enable foreign key constraints
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        # Continue with setup
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
     
@@ -152,7 +158,17 @@ class LearningTracker:
     
     def get_skill_details(self, skill_id: int) -> Dict:
         """Get detailed information about a skill"""
+        # Check if skill exists
         cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id FROM learning_skills WHERE id = ?",
+            (skill_id,)
+        )
+        skill = cursor.fetchone()
+
+        if skill is None:
+            # Skill doesn't exist!
+            raise ValueError(f"Skill ID {skill_id} does not exist")
         
         # Get skill info
         cursor.execute("SELECT * FROM learning_skills WHERE id = ?", (skill_id,))
@@ -186,6 +202,17 @@ class LearningTracker:
                     notes: str = None, key_takeaways: str = None) -> int:
         """Log a learning session"""
         cursor = self.conn.cursor()
+        #Check if skill exists
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id FROM learning_skills WHERE id = ?",
+            (skill_id,)
+        )
+        skill = cursor.fetchone()
+
+        if skill is None:
+            # Skill doesn't exist!
+            raise ValueError(f"Skill ID {skill_id} does not exist")
         
         # Insert session
         cursor.execute("""
@@ -211,7 +238,17 @@ class LearningTracker:
                          difficulty: int = 3, tags: str = None,
                          source: str = None) -> int:
         """Add a learning item (concept, Q&A, fact, etc.)"""
+        # Check if skill exists
         cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id FROM learning_skills WHERE id = ?",
+            (skill_id,)
+        )
+        skill = cursor.fetchone()
+
+        if skill is None:
+            # Skill doesn't exist!
+            raise ValueError(f"Skill ID {skill_id} does not exist")
         
         next_review = datetime.now() + timedelta(days=1)  # Review tomorrow
         

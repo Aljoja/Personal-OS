@@ -376,7 +376,7 @@ class PersonalOS:
         skill_id = int(skill_id)
         
         duration = input("Duration (minutes): ").strip()
-        if not duration.isdigit():
+        if not duration.isdigit() or duration == '0' or int(duration) < 0:
             print("❌ Invalid duration")
             return
         duration = int(duration)
@@ -412,8 +412,12 @@ class PersonalOS:
             days_map = {1: 1, 2: 3, 3: 7, 4: 14, 5: 30}
             days = days_map.get(understanding, 7)
             print(f"📅 Next review scheduled in {days} days")
-        except Exception as e:
+        except ValueError as e:
+            # This catches our "skill doesn't exist" error
             print(f"❌ Error: {e}")
+            print("💡 Use option 1 to view valid skill IDs")
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
     
     def _review_items(self):
         """Review learning items with spaced repetition"""
@@ -524,8 +528,12 @@ class PersonalOS:
             )
             print(f"\n✅ Learning item added! (ID: {item_id})")
             print("📅 Scheduled for review tomorrow")
-        except Exception as e:
+        except ValueError as e:
+            # This catches our "skill doesn't exist" error
             print(f"❌ Error: {e}")
+            print("💡 Use option 1 to view valid skill IDs")
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
     
     def _search_learning_items(self):
         """Search learning items"""
@@ -595,9 +603,12 @@ class PersonalOS:
                 for session in details['recent_sessions'][:3]:
                     print(f"   • {session['session_date'][:10]}: {session['topics_covered'][:50]}...")
                     print(f"     {session['duration_minutes']}min, understanding: {session['understanding_level']}/5")
-        
-        except Exception as e:
+        except ValueError as e:
+            # This catches our "skill doesn't exist" error
             print(f"❌ Error: {e}")
+            print("💡 Use option 1 to view valid skill IDs")
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
     
     def _view_learning_stats(self):
         """View learning statistics"""

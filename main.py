@@ -23,6 +23,7 @@ class PersonalOS:
         self.conversation = []
         self.messages_since_save = 0
         self.save_interval = 10  # Save every 10 messages
+        self._cleanup_done = False
         
         # Register cleanup handlers
         atexit.register(self._cleanup)
@@ -37,10 +38,16 @@ class PersonalOS:
     
     def _cleanup(self):
         """Save conversation and close resources"""
+
+        # Check if already cleaned up
+        if self._cleanup_done:
+            return    # Already done, exit early
+
         try:
             if self.conversation:
                 self.memory.save_conversation(self.conversation)
                 print("💾 Conversation saved!")
+                self._cleanup_done = True  # Mark as done
             
             # Close resources
             self.memory.close()

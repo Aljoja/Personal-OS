@@ -2,6 +2,7 @@
 brain/*.db
 brain/embeddings/
 conversations/
+explanations/   
 __pycache__/
 *.pyc
 logs/*.log

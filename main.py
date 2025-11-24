@@ -838,25 +838,12 @@ class PersonalOS:
         # Generate explanation
         print(f"\n🤔 Generating explanation for '{topic}'...")
         
-        # Build context-aware prompt
-        prompt = f"""You are helping a user learn {selected_skill['skill_name']} (skill level: {selected_skill['difficulty']}).
-
-    Please explain: {topic}
-
-    Provide a clear, well-structured explanation in Markdown format including:
-    - A brief overview
-    - Key concepts
-    - Practical examples (if applicable)
-    - Common pitfalls or tips
-    - Related topics to explore
-
-    Keep it concise but thorough."""
-        
         try:
             # Get explanation from Claude
-            response = self.claude.generate_response(
-                prompt,
-                system_prompt="You are a knowledgeable teacher providing clear, structured explanations."
+            response = self.claude.generate_explanation(
+                topic,
+                selected_skill['skill_name'],
+                selected_skill['difficulty']
             )
             
             # Show explanation

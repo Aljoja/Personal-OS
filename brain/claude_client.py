@@ -131,6 +131,67 @@ When the user shares important information naturally in conversation, you can su
         except Exception as e:
             print(f"❌ Error calling Claude API: {e}")
             raise
+
+    def generate_explanation(self, topic: str, skill_name: str, 
+                            skill_level: str) -> str:
+        """
+        Generate a structured explanation for learning
+        
+        Why separate from chat():
+        - Different purpose (teaching vs. conversation)
+        - Different system prompt (teacher vs. assistant)
+        - No memory context needed (topic is self-contained)
+        - Optimized for speed (no memory lookups)
+        - Focused on educational quality
+        
+        Args:
+            topic: What to explain (e.g., "list comprehensions")
+            skill_name: Skill context (e.g., "Python Programming")
+            skill_level: User's level (e.g., "beginner", "intermediate")
+        
+        Returns:
+            Markdown-formatted explanation
+        """
+        # Custom system prompt for teaching
+        system_prompt = (
+            "You are an expert teacher providing clear, structured explanations. "
+            "Your goal is to help learners deeply understand concepts. "
+            "Format your response in Markdown with:\n"
+            "- Clear headers for sections\n"
+            "- Bullet points for key concepts\n"
+            "- Code blocks for examples\n"
+            "- Emphasis on practical application\n"
+            "Keep explanations concise but thorough."
+        )
+        
+        # Build focused prompt
+        user_message = f"""I am learning {skill_name} at a {skill_level} level.
+
+    Please explain: {topic}
+
+    Structure your explanation with:
+    1. **Overview**: Brief introduction (2-3 sentences)
+    2. **Key Concepts**: Main ideas to understand
+    3. **Examples**: Practical demonstrations
+    4. **Common Pitfalls**: What to watch out for
+    5. **Practice Tips**: How to master this
+    6. **Related Topics**: What to explore next
+
+    Keep it practical and actionable."""
+        
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=system_prompt,  # ← Custom prompt for teaching
+                messages=[{"role": "user", "content": user_message}]
+            )
+            
+            return response.content[0].text
+            
+        except Exception as e:
+            print(f"❌ Error generating explanation: {e}")
+            raise
     
     def _deduplicate_facts(self, facts_list: List[Dict]) -> List[Dict]:
         """Remove duplicate facts based on entity and fact content"""

@@ -133,7 +133,7 @@ When the user shares important information naturally in conversation, you can su
             raise
 
     def generate_explanation(self, topic: str, skill_name: str, 
-                            skill_level: str) -> str:
+                            skill_level: str, custom_guidance: str = None) -> str:
         """
         Generate a structured explanation for learning
         
@@ -148,6 +148,7 @@ When the user shares important information naturally in conversation, you can su
             topic: What to explain (e.g., "list comprehensions")
             skill_name: Skill context (e.g., "Python Programming")
             skill_level: User's level (e.g., "beginner", "intermediate")
+            custom_guidance: Optional additional instructions for the explanation (e.g., "focus on examples", "keep it short")
         
         Returns:
             Markdown-formatted explanation
@@ -167,17 +168,31 @@ When the user shares important information naturally in conversation, you can su
         # Build focused prompt
         user_message = f"""I am learning {skill_name} at a {skill_level} level.
 
-    Please explain: {topic}
+        Please explain: {topic}"""
 
-    Structure your explanation with:
-    1. **Overview**: Brief introduction (2-3 sentences)
-    2. **Key Concepts**: Main ideas to understand
-    3. **Examples**: Practical demonstrations
-    4. **Common Pitfalls**: What to watch out for
-    5. **Practice Tips**: How to master this
-    6. **Related Topics**: What to explore next
+        # Add custom guidance if provided
+        if custom_guidance:
+            user_message += f"""
 
-    Keep it practical and actionable."""
+            **Special focus/approach requested by learner:**
+            {custom_guidance}
+
+            Please tailor your explanation to address this guidance while still maintaining clarity and structure."""
+
+        # Add standard structure request
+        user_message += """
+
+        Structure your explanation with:
+        1. **Overview**: Brief introduction (2-3 sentences)
+        2. **Key Concepts**: Main ideas to understand
+        3. **Examples**: Practical demonstrations
+        4. **Common Pitfalls**: What to watch out for
+        5. **Practice Tips**: How to master this
+        6. **Related Topics**: What to explore next
+
+        Keep it practical and actionable."""
+
+
         
         try:
             response = self.client.messages.create(

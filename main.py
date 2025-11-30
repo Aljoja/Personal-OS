@@ -818,6 +818,37 @@ class PersonalOS:
             print("❌ Topic cannot be empty")
             return
         
+        # Get optional custom guidance with shortcuts
+        print("\nCustomization (optional - press Enter to skip):")
+        print("\nQuick options:")
+        print("  1. Brief & simple")
+        print("  2. Lots of examples")
+        print("  3. Like I'm 5 (ELI5)")
+        print("  4. Advanced/deep dive")
+        print("  5. Custom (type your own)")
+        print("  [Enter] Skip customization")
+
+        guidance_choice = input("\nChoice: ").strip()
+
+        custom_guidance = None
+
+        if guidance_choice == '1':
+            custom_guidance = "Keep this explanation brief and simple, focusing on the core concept only"
+        elif guidance_choice == '2':
+            custom_guidance = "Provide lots of practical examples showing different use cases"
+        elif guidance_choice == '3':
+            custom_guidance = "Explain this like I'm 5 years old, using simple analogies and avoiding jargon"
+        elif guidance_choice == '4':
+            custom_guidance = "Provide an advanced, in-depth explanation with edge cases and best practices"
+        elif guidance_choice == '5':
+            custom_input = input("Your custom guidance: ").strip()
+            if custom_input:
+                custom_guidance = custom_input
+
+        # If empty, set to None
+        if not custom_guidance:
+            custom_guidance = None
+                
         # Check if explanation already exists
         if self.explanations.explanation_exists(
             selected_skill['id'], 
@@ -843,7 +874,8 @@ class PersonalOS:
             response = self.claude.generate_explanation(
                 topic,
                 selected_skill['skill_name'],
-                selected_skill['difficulty']
+                selected_skill['difficulty'],
+                custom_guidance=custom_guidance
             )
             
             # Show explanation
@@ -860,8 +892,13 @@ class PersonalOS:
                 # Save with metadata header
                 content = f"# {topic.title()}\n\n"
                 content += f"**Skill:** {selected_skill['skill_name']}\n"
-                content += f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-                content += "---\n\n"
+                content += f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+
+                # Add custom guidance to metadata if provided
+                if custom_guidance:
+                    content += f"**Custom Request:** {custom_guidance}\n"
+
+                content += "\n---\n\n"
                 content += response
                 
                 success, filepath = self.explanations.save_explanation(

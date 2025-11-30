@@ -81,6 +81,7 @@ class PersonalOS:
         print("  goals       - Manage goals")
         print("  learn       - Learning & skills tracker  🎓")
         print("  explain     - Get & save explanations  🔖")
+        print("  build       - Challenge-based learning lab 🏗️")
         print("  style       - Set writing style")
         print("  edit        - Apply your style to text")
         print("  files       - Search indexed files")
@@ -156,7 +157,11 @@ class PersonalOS:
                 elif user_input.lower() == 'explain':
                     self._explanation_menu()
                     continue
-                
+
+                elif user_input.lower() == 'build':
+                    self._challenge_lab_menu()
+                    continue
+
                 elif user_input.lower() == 'style':
                     style = input("Describe your writing style: ").strip()
                     if not style:
@@ -965,6 +970,460 @@ class PersonalOS:
         print("💡 Feature hint: Implement similar to _explanation_menu")
         print("   but skip existence check and show comparison")
 
+    def _challenge_lab_menu(self):
+        """Challenge-based learning lab - main menu"""
+        from brain.challenge_library import ChallengeLibrary
+        
+        challenge_lib = ChallengeLibrary()
+        
+        while True:
+            print("\n" + "="*60)
+            print("🏗️  Challenge-Based Learning Lab")
+            print("="*60)
+            
+            # Show streak
+            streak_stats = self.learning.get_streak_stats()
+            if streak_stats['current_streak'] > 0:
+                print(f"\n🔥 Current streak: {streak_stats['current_streak']} days")
+            
+            # Show in-progress challenges
+            in_progress = self.learning.get_all_challenges(status='in_progress')
+            if in_progress:
+                print(f"\n⚙️  {len(in_progress)} challenge(s) in progress")
+            
+            print("\nOptions:")
+            print("  1. Start new challenge")
+            print("  2. Continue challenge")
+            print("  3. Log obstacle")
+            print("  4. View skill progression")
+            print("  5. Search past obstacles")
+            print("  6. View all challenges")
+            print("  0. Back to main menu")
+            
+            choice = input("\nChoice: ").strip()
+            
+            if choice == '0':
+                break
+            elif choice == '1':
+                self._start_new_challenge(challenge_lib)
+            elif choice == '2':
+                self._continue_challenge()
+            elif choice == '3':
+                self._log_obstacle()
+            elif choice == '4':
+                self._view_skill_progression()
+            elif choice == '5':
+                self._search_obstacles()
+            elif choice == '6':
+                self._view_all_challenges()
+            else:
+                print("❌ Invalid choice")
+
+    def _start_new_challenge(self, challenge_lib):
+        """Browse and start a new challenge"""
+        
+        print("\n" + "="*60)
+        print("📚 Challenge Library")
+        print("="*60)
+        
+        # Get user's skills
+        skills = self.learning.get_all_skills()
+        if not skills:
+            print("\n⚠️  No skills found. Add a skill first with 'learn' command.")
+            return
+        
+        # Show skills
+        print("\nYour skills:")
+        for idx, skill in enumerate(skills, 1):
+            # Get progression for this skill
+            progression = self.learning.get_skill_progression(skill['id'])
+            level = progression['competency_level']
+            completed = progression['completed'] or 0
+            print(f"  {idx}. {skill['skill_name']} - {level} ({completed} completed)")
+        
+        # Select skill
+        try:
+            choice = input("\nWhich skill? (number or 0 to cancel): ").strip()
+            if choice == '0':
+                return
+            
+            skill_idx = int(choice) - 1
+            if skill_idx < 0 or skill_idx >= len(skills):
+                print("❌ Invalid choice")
+                return
+            
+            selected_skill = skills[skill_idx]
+        except (ValueError, IndexError):
+            print("❌ Invalid choice")
+            return
+        
+        # Map skill name to challenge category
+        # (You'll need to map your skill names to challenge categories)
+        skill_name_lower = selected_skill['skill_name'].lower()
+        
+        if 'python' in skill_name_lower:
+            category = 'python'
+        elif 'data' in skill_name_lower or 'analysis' in skill_name_lower:
+            category = 'data_analysis'
+        elif 'machine' in skill_name_lower or 'ml' in skill_name_lower:
+            category = 'machine_learning'
+        elif 'digital' in skill_name_lower or 'iot' in skill_name_lower:
+            category = 'digitalization'
+        else:
+            # Show all categories
+            category = None
+        
+        # Get challenges
+        if category:
+            challenges = challenge_lib.get_challenges_for_skill(category)
+        else:
+            all_challenges = challenge_lib.get_all_challenges()
+            challenges = []
+            for cat, chals in all_challenges.items():
+                challenges.extend([{**c, 'category': cat} for c in chals])
+        
+        if not challenges:
+            print(f"\n⚠️  No challenges found for {selected_skill['skill_name']}")
+            print("💡 You can add custom challenges!")
+            return
+        
+        # Show challenges
+        print(f"\n📋 Challenges for {selected_skill['skill_name']}:")
+        print()
+        
+        for idx, challenge in enumerate(challenges, 1):
+            diff_emoji = {'beginner': '🟢', 'intermediate': '🟡', 'advanced': '🔴'}
+            emoji = diff_emoji.get(challenge['difficulty'], '⚪')
+            
+            print(f"{idx}. {emoji} {challenge['title']}")
+            print(f"   Difficulty: {challenge['difficulty'].title()} | Est. time: {challenge['estimated_hours']}h")
+            print(f"   Teaches: {', '.join(challenge['skills_taught'][:3])}...")
+            print()
+        
+        # Select challenge
+        try:
+            choice = input("Which challenge? (number or 0 to cancel): ").strip()
+            if choice == '0':
+                return
+            
+            challenge_idx = int(choice) - 1
+            if challenge_idx < 0 or challenge_idx >= len(challenges):
+                print("❌ Invalid choice")
+                return
+            
+            selected_challenge = challenges[challenge_idx]
+        except (ValueError, IndexError):
+            print("❌ Invalid choice")
+            return
+        
+        # Show full description
+        print("\n" + "="*60)
+        print(f"📖 {selected_challenge['title']}")
+        print("="*60)
+        print(f"\nDifficulty: {selected_challenge['difficulty'].title()}")
+        print(f"Estimated time: {selected_challenge['estimated_hours']} hours")
+        print(f"\nDescription:")
+        print(selected_challenge['description'])
+        print(f"\nSkills you'll learn:")
+        for skill in selected_challenge['skills_taught']:
+            print(f"  • {skill}")
+        
+        # Confirm start
+        start = input("\n🚀 Start this challenge? (y/n): ").strip().lower()
+        
+        if start == 'y':
+            # Add to database
+            challenge_id = self.learning.add_challenge(
+                title=selected_challenge['title'],
+                description=selected_challenge['description'],
+                skill_id=selected_skill['id'],
+                difficulty=selected_challenge['difficulty'],
+                estimated_hours=selected_challenge['estimated_hours'],
+                skills_taught=selected_challenge['skills_taught'],
+                prerequisites=selected_challenge['prerequisites'],
+                unlocks=selected_challenge.get('unlocks', [])
+            )
+            
+            # Start challenge
+            self.learning.start_challenge(challenge_id)
+            
+            print(f"\n✅ Challenge started! (ID: {challenge_id})")
+            print("💡 Use 'build' → 'Continue challenge' to work on it")
+            print("💡 Log obstacles as you encounter them!")
+
+    def _continue_challenge(self):
+        """Continue working on an in-progress challenge"""
+        
+        # Get in-progress challenges
+        in_progress = self.learning.get_all_challenges(status='in_progress')
+        
+        if not in_progress:
+            print("\n⚠️  No challenges in progress")
+            print("💡 Start a new challenge first!")
+            return
+        
+        print("\n" + "="*60)
+        print("⚙️  Challenges in Progress")
+        print("="*60)
+        
+        for idx, challenge in enumerate(in_progress, 1):
+            print(f"\n{idx}. {challenge['title']}")
+            print(f"   Progress: {challenge['progress_percent']}%")
+            print(f"   Time spent: {challenge['time_spent'] // 60}h {challenge['time_spent'] % 60}m")
+            
+            # Show obstacles
+            obstacles = self.learning.get_obstacles_for_challenge(challenge['id'])
+            blocking = [o for o in obstacles if o['status'] == 'blocking']
+            if blocking:
+                print(f"   ⚠️  {len(blocking)} blocking obstacle(s)")
+        
+        # Select challenge
+        try:
+            choice = input("\nWhich challenge? (number or 0 to cancel): ").strip()
+            if choice == '0':
+                return
+            
+            challenge_idx = int(choice) - 1
+            if challenge_idx < 0 or challenge_idx >= len(in_progress):
+                print("❌ Invalid choice")
+                return
+            
+            selected_challenge = in_progress[challenge_idx]
+        except (ValueError, IndexError):
+            print("❌ Invalid choice")
+            return
+        
+        # Work session
+        print("\n" + "="*60)
+        print(f"🛠️  Working on: {selected_challenge['title']}")
+        print("="*60)
+        
+        # Show current obstacles
+        obstacles = self.learning.get_obstacles_for_challenge(selected_challenge['id'])
+        blocking = [o for o in obstacles if o['status'] == 'blocking']
+        
+        if blocking:
+            print("\n⚠️  Current blockers:")
+            for obs in blocking:
+                print(f"  • {obs['obstacle_description']}")
+        
+        print("\nWhat do you want to do?")
+        print("  1. Update progress")
+        print("  2. Log new obstacle")
+        print("  3. Solve obstacle")
+        print("  4. Complete challenge")
+        print("  0. Back")
+        
+        action = input("\nChoice: ").strip()
+        
+        if action == '1':
+            # Update progress
+            try:
+                progress = int(input("\nCurrent progress %: ").strip())
+                minutes = int(input("Minutes worked this session: ").strip())
+                notes = input("Notes (optional): ").strip()
+                
+                self.learning.update_challenge_progress(
+                    selected_challenge['id'],
+                    progress,
+                    minutes,
+                    notes if notes else None
+                )
+                
+                # Log streak
+                self.learning.log_daily_streak(minutes, selected_challenge['id'])
+                
+                print("\n✅ Progress updated!")
+                
+            except ValueError:
+                print("❌ Invalid input")
+        
+        elif action == '2':
+            # Log obstacle
+            obstacle = input("\nWhat's blocking you?: ").strip()
+            if obstacle:
+                self.learning.log_obstacle(selected_challenge['id'], obstacle)
+                print("\n✅ Obstacle logged!")
+                print("💡 Work on solving it, then come back to mark it solved")
+        
+        elif action == '3':
+            # Solve obstacle
+            if not blocking:
+                print("\n⚠️  No blocking obstacles for this challenge")
+                return
+            
+            print("\nWhich obstacle did you solve?")
+            for idx, obs in enumerate(blocking, 1):
+                print(f"  {idx}. {obs['obstacle_description']}")
+            
+            try:
+                obs_choice = int(input("\nObstacle #: ").strip()) - 1
+                if 0 <= obs_choice < len(blocking):
+                    selected_obs = blocking[obs_choice]
+                    
+                    solution = input("\nHow did you solve it?: ").strip()
+                    insight = input("What did you learn?: ").strip()
+                    minutes = input("Minutes to solve (optional): ").strip()
+                    
+                    self.learning.solve_obstacle(
+                        selected_obs['id'],
+                        solution,
+                        insight if insight else None,
+                        int(minutes) if minutes else None
+                    )
+                    
+                    print("\n✅ Obstacle marked as solved!")
+                    print("🎉 You're building problem-solving skills!")
+                    
+            except (ValueError, IndexError):
+                print("❌ Invalid input")
+        
+        elif action == '4':
+            # Complete challenge
+            print("\n🎉 Complete challenge?")
+            confirm = input("Are you sure? (yes/no): ").strip().lower()
+            
+            if confirm == 'yes':
+                github = input("\nGitHub link (optional): ").strip()
+                notes = input("Final notes/learnings: ").strip()
+                
+                self.learning.complete_challenge(
+                    selected_challenge['id'],
+                    github if github else None,
+                    notes if notes else None
+                )
+                
+                print("\n✅ Challenge completed!")
+                print("🏆 Skill progression updated!")
+                print("💡 Check your skill progression to see your growth")
+
+    def _log_obstacle(self):
+        """Quick log obstacle for any challenge"""
+        
+        in_progress = self.learning.get_all_challenges(status='in_progress')
+        
+        if not in_progress:
+            print("\n⚠️  No challenges in progress")
+            return
+        
+        print("\nWhich challenge?")
+        for idx, challenge in enumerate(in_progress, 1):
+            print(f"  {idx}. {challenge['title']}")
+        
+        try:
+            choice = int(input("\nChallenge #: ").strip()) - 1
+            if 0 <= choice < len(in_progress):
+                selected = in_progress[choice]
+                
+                obstacle = input("\nWhat's blocking you?: ").strip()
+                if obstacle:
+                    self.learning.log_obstacle(selected['id'], obstacle)
+                    print("\n✅ Obstacle logged!")
+            else:
+                print("❌ Invalid choice")
+        except (ValueError, IndexError):
+            print("❌ Invalid input")
+
+    def _view_skill_progression(self):
+        """View skill progression based on challenges"""
+        
+        skills = self.learning.get_all_skills()
+        if not skills:
+            print("\n⚠️  No skills found")
+            return
+        
+        print("\n" + "="*60)
+        print("📊 Your Skill Progression")
+        print("="*60)
+        
+        for skill in skills:
+            progression = self.learning.get_skill_progression(skill['id'])
+            
+            print(f"\n{skill['skill_name']}: {progression['competency_level'].upper()}")
+            
+            # Progress bar
+            percent = progression['competency_percent']
+            filled = int(percent / 10)
+            bar = '█' * filled + '░' * (10 - filled)
+            print(f"  [{bar}] {percent}%")
+            
+            print(f"  Projects completed: {progression['completed'] or 0}")
+            print(f"  In progress: {progression['in_progress'] or 0}")
+            print(f"  Obstacles overcome: {progression['solved_obstacles'] or 0}")
+            print(f"  Total time: {(progression['total_minutes'] or 0) // 60}h")
+
+    def _search_obstacles(self):
+        """Search past obstacles and solutions"""
+        
+        keyword = input("\nSearch for (keyword): ").strip()
+        
+        if not keyword:
+            return
+        
+        results = self.learning.search_past_obstacles(keyword)
+        
+        if not results:
+            print(f"\n⚠️  No obstacles found matching '{keyword}'")
+            return
+        
+        print(f"\n Found {len(results)} obstacle(s):\n")
+        
+        for idx, obs in enumerate(results, 1):
+            print(f"{idx}. [{obs['skill_name']}] {obs['challenge_title']}")
+            print(f"   Problem: {obs['obstacle_description']}")
+            if obs['solution']:
+                print(f"   Solution: {obs['solution'][:100]}...")
+            if obs['insight']:
+                print(f"   💡 {obs['insight']}")
+            print()
+        
+        # Option to view full details
+        view = input("View full details? (number or 0 to skip): ").strip()
+        if view and view != '0':
+            try:
+                idx = int(view) - 1
+                if 0 <= idx < len(results):
+                    obs = results[idx]
+                    print("\n" + "="*60)
+                    print(f"🔍 {obs['challenge_title']}")
+                    print("="*60)
+                    print(f"\nSkill: {obs['skill_name']}")
+                    print(f"Problem:\n{obs['obstacle_description']}")
+                    print(f"\nSolution:\n{obs['solution']}")
+                    if obs['insight']:
+                        print(f"\nInsight:\n{obs['insight']}")
+                    if obs['time_to_solve']:
+                        print(f"\nTime to solve: {obs['time_to_solve']} minutes")
+            except (ValueError, IndexError):
+                pass
+
+    def _view_all_challenges(self):
+        """View all challenges organized by status"""
+        
+        not_started = self.learning.get_all_challenges(status='not_started')
+        in_progress = self.learning.get_all_challenges(status='in_progress')
+        completed = self.learning.get_all_challenges(status='completed')
+        
+        print("\n" + "="*60)
+        print("📋 All Challenges")
+        print("="*60)
+        
+        if completed:
+            print(f"\n✅ Completed ({len(completed)}):")
+            for c in completed:
+                print(f"  • {c['title']}")
+        
+        if in_progress:
+            print(f"\n⚙️  In Progress ({len(in_progress)}):")
+            for c in in_progress:
+                print(f"  • {c['title']} - {c['progress_percent']}%")
+        
+        if not_started:
+            print(f"\n📚 Available ({len(not_started)}):")
+            for c in not_started[:5]:  # Show first 5
+                print(f"  • {c['title']}")
+            if len(not_started) > 5:
+                print(f"  ... and {len(not_started) - 5} more")
 
 def main():
     """Entry point"""

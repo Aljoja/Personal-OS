@@ -89,6 +89,8 @@ personal-os/
 │   ├── knowledge.db   # SQLite database
 │   ├── embeddings/    # Vector DB
 │   ├── memory.py      # Memory system
+│   ├── learning_tracker.py
+│   ├── explanations.py
 │   └── claude_client.py
 ├── files/
 │   └── watched/       # Drop files here
@@ -96,7 +98,8 @@ personal-os/
 │   ├── __init__.py
 │   ├── file_watcher.py
 │   └── morning_routine.py
-├── conversations/     # Saved conversations in txt file
+├── conversations/     # Saved conversations in .txt file
+├── explanations/      # Saved explanations in .md file
 ├── logs/               # Unused
 ├── prompts/            # Unused
 └── main.py            # Start here

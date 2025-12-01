@@ -7,6 +7,7 @@ import atexit
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from sympy import re
 from brain.claude_client import PersonalClaude
 from brain.memory import Memory
 from brain.learning_tracker import LearningTracker
@@ -284,13 +285,14 @@ class PersonalOS:
             print("\n📚 Options:")
             print("  1. View all skills")
             print("  2. Add new skill")
-            print("  3. Log learning session")
-            print("  4. Review items (spaced repetition)")
-            print("  5. Add learning item (Q&A, concept, fact)")
-            print("  6. Search learning items")
-            print("  7. View skill details")
-            print("  8. Learning statistics")
-            print("  9. Manage milestones")
+            print("  3. Add skill with AI roadmap 🤖")
+            print("  4. Log learning session")
+            print("  5. Review items (spaced repetition)")
+            print("  6. Add learning item (Q&A, concept, fact)")
+            print("  7. Search learning items")
+            print("  8. View skill details")
+            print("  9. Learning statistics")
+            print("  10. Manage milestones")
             print("  0. Back to main menu")
             
             choice = input("\nChoice: ").strip()
@@ -303,26 +305,29 @@ class PersonalOS:
             
             elif choice == '2':
                 self._add_new_skill()
-            
+
             elif choice == '3':
-                self._log_learning_session()
+                self._add_skill_with_roadmap()
             
             elif choice == '4':
-                self._review_items()
+                self._log_learning_session()
             
             elif choice == '5':
-                self._add_learning_item()
+                self._review_items()
             
             elif choice == '6':
-                self._search_learning_items()
+                self._add_learning_item()
             
             elif choice == '7':
-                self._view_skill_details()
+                self._search_learning_items()
             
             elif choice == '8':
-                self._view_learning_stats()
+                self._view_skill_details()
             
             elif choice == '9':
+                self._view_learning_stats()
+            
+            elif choice == '10':
                 self._manage_milestones()
             
             else:
@@ -584,7 +589,10 @@ class PersonalOS:
         if not skills:
             print("\n❌ No skills tracked yet")
             return
-        
+
+        # Sort by ID
+        skills = sorted(skills, key=lambda s: s['id'])
+
         print("\nYour skills:")
         for skill in skills:
             print(f"  {skill['id']}. {skill['skill_name']}")
@@ -623,6 +631,119 @@ class PersonalOS:
                 for session in details['recent_sessions'][:3]:
                     print(f"   • {session['session_date'][:10]}: {session['topics_covered'][:50]}...")
                     print(f"     {session['duration_minutes']}min, understanding: {session['understanding_level']}/5")
+
+            # Get challenge progression (if any)
+            progression = self.learning.get_skill_progression(int(skill_id))
+            
+            completed = progression.get('completed') or 0
+            in_progress = progression.get('in_progress') or 0
+            solved_obstacles = progression.get('solved_obstacles') or 0
+
+            if completed > 0 or in_progress > 0:
+                print(f"\n🏗️  Challenge Progress:")
+                print(f"   Completed: {completed}")
+                print(f"   In progress: {in_progress}")
+                print(f"   Obstacles solved: {solved_obstacles}")
+                print(f"   Competency: {progression['competency_level']} ({progression['competency_percent']}%)")
+            
+            # Check roadmap status
+            cursor = self.learning.conn.cursor()
+            cursor.execute("""
+                SELECT roadmap_generated, goals, current_level, timeline 
+                FROM learning_skills 
+                WHERE id = ?
+            """, (int(skill_id),))
+            roadmap_data = cursor.fetchone()
+            
+            has_roadmap = roadmap_data['roadmap_generated'] if roadmap_data else 0
+            
+            print("\n" + "-"*60)
+            if has_roadmap:
+                print("✅ AI Learning Roadmap: Generated")
+                if roadmap_data['goals']:
+                    goals_preview = roadmap_data['goals'][:80]
+                    if len(roadmap_data['goals']) > 80:
+                        goals_preview += "..."
+                    print(f"   {goals_preview}")
+            else:
+                print("⚠️  AI Learning Roadmap: Not generated")
+                print("   💡 Generate a personalized roadmap with challenge recommendations")
+            
+            # Roadmap options
+            print("\n" + "-"*60)
+            print("Options:")
+            
+            if not has_roadmap:
+                print("  1. Generate AI roadmap for this skill 🤖")
+                print("  2. View challenges for this skill")
+                print("  0. Back")
+                
+                option = input("\nChoice: ").strip()
+                
+                if option == '1':
+                    # Get skill name for the method call
+                    skill_name = details['skill_name']
+                    self._generate_roadmap_for_existing_skill(int(skill_id), skill_name)
+                elif option == '2':
+                    # Show challenges
+                    challenges = self.learning.get_all_challenges(skill_id=int(skill_id))
+                    if challenges:
+                        print(f"\n📋 Challenges for {details['skill_name']}:")
+                        for c in challenges:
+                            status_icon = {'completed': '✅', 'in_progress': '⚙️', 'not_started': '📋', 'abandoned': '❌'}
+                            icon = status_icon.get(c['status'], '❓')
+                            print(f"   {icon} {c['title']} ({c['difficulty']}, {c['estimated_hours']}h)")
+                    else:
+                        print("\n💡 No challenges yet. Generate a roadmap to create challenges!")
+                    input("\nPress Enter to continue...")
+            else:
+                print("  1. View full roadmap context")
+                print("  2. Add more challenges to roadmap")
+                print("  3. View challenges for this skill")
+                print("  0. Back")
+                
+                option = input("\nChoice: ").strip()
+                
+                if option == '1':
+                    # Show full roadmap details
+                    print("\n" + "="*60)
+                    print(f"📋 Learning Roadmap: {details['skill_name']}")
+                    print("="*60)
+                    
+                    if roadmap_data['current_level']:
+                        print("\n📊 Level Assessment:")
+                        print(roadmap_data['current_level'])
+                    
+                    if roadmap_data['goals']:
+                        print("\n🎯 Goals & Focus:")
+                        print(roadmap_data['goals'])
+                    
+                    if roadmap_data['timeline']:
+                        print(f"\n⏱️  Timeline: {roadmap_data['timeline']}")
+                    
+                    input("\nPress Enter to continue...")
+                
+                elif option == '2':
+                    confirm = input("\n⚠️  Add more challenges? (existing preserved) (y/n): ").strip().lower()
+                    if confirm == 'y':
+                        skill_name = details['skill_name']
+                        self._generate_roadmap_for_existing_skill(int(skill_id), skill_name)
+                
+                elif option == '3':
+                    # Show challenges
+                    challenges = self.learning.get_all_challenges(skill_id=int(skill_id))
+                    if challenges:
+                        print(f"\n📋 Challenges for {details['skill_name']}:")
+                        for c in challenges:
+                            status_icon = {'completed': '✅', 'in_progress': '⚙️', 'not_started': '📋', 'abandoned': '❌'}
+                            icon = status_icon.get(c['status'], '❓')
+                            print(f"   {icon} {c['title']} ({c['difficulty']}, {c['estimated_hours']}h)")
+                            if c['status'] == 'in_progress':
+                                print(f"       Progress: {c['progress_percent']}%, Time: {c['time_spent']}min")
+                    else:
+                        print("\n💡 No challenges yet. Generate a roadmap to create challenges!")
+                    input("\nPress Enter to continue...")
+
         except ValueError as e:
             # This catches our "skill doesn't exist" error
             print(f"❌ Error: {e}")
@@ -1424,6 +1545,442 @@ class PersonalOS:
                 print(f"  • {c['title']}")
             if len(not_started) > 5:
                 print(f"  ... and {len(not_started) - 5} more")
+
+        # New Roadmap methods
+    
+    def _add_skill_with_roadmap(self):
+        """Add new skill with AI-generated learning roadmap"""
+        
+        print("\n" + "="*60)
+        print("🎓 Create New Skill with Learning Roadmap")
+        print("="*60)
+        
+        # Basic skill info
+        skill_name = input("\nSkill name (e.g., 'Python Programming'): ").strip()
+        if not skill_name:
+            print("❌ Skill name required")
+            return
+        
+        category = input("Category (e.g., 'programming', 'language', 'business'): ").strip()
+        
+        print("\nYour current level:")
+        print("  1. Beginner (just starting)")
+        print("  2. Intermediate (some experience)")
+        print("  3. Advanced (quite experienced)")
+        
+        level_choice = input("Choice (1-3): ").strip()
+        level_map = {'1': 'beginner', '2': 'intermediate', '3': 'advanced'}
+        difficulty = level_map.get(level_choice, 'beginner')
+        
+        # AI roadmap generation
+        print("\n" + "="*60)
+        print("🤖 AI-Powered Learning Roadmap Generator")
+        print("="*60)
+        
+        print("\nI'll ask a few questions to create a personalized roadmap:")
+        print("  • What you already know")
+        print("  • Where you want to go")
+        print("  • What challenges to build")
+        print()
+        
+        proceed = input("Ready? (y/n): ").strip().lower()
+        if proceed != 'y':
+            print("\nCancelled. Use basic 'Add skill' for manual setup.")
+            return
+        
+        # Interview questions
+        print("\n" + "-"*60)
+        print("📊 CURRENT LEVEL ASSESSMENT")
+        print("-"*60)
+        
+        current_level = input(f"\nWhat do you already know about {skill_name}?\n(Be specific - tools, concepts, libraries, experience)\n\n> ").strip()
+        
+        comfortable = input(f"\nWhat are you COMFORTABLE with?\n(Things you can do without looking up)\n\n> ").strip()
+        
+        uncomfortable = input(f"\nWhat do you want to learn or struggle with?\n(Things you haven't tried or find difficult)\n\n> ").strip()
+        
+        print("\n" + "-"*60)
+        print("🎯 GOALS & OBJECTIVES")
+        print("-"*60)
+        
+        goals = input(f"\nWhy do you want to learn {skill_name}?\nWhat do you want to build or achieve?\n\n> ").strip()
+        
+        domains = input(f"\nSpecific areas or technologies?\n(e.g., 'web development', 'machine learning', 'financial analysis')\n\n> ").strip()
+        
+        timeline = input(f"\nTimeline or deadline?\n(e.g., '3 months', '6 months', 'no rush')\n\n> ").strip()
+        
+        # Generate roadmap with Claude
+        print("\n" + "="*60)
+        print("🤔 Analyzing and generating your learning roadmap...")
+        print("="*60)
+        
+        roadmap_prompt = f"""You are an expert learning path designer. A user wants to learn: {skill_name}
+
+CURRENT LEVEL ASSESSMENT:
+- What they know: {current_level}
+- Comfortable with: {comfortable}
+- Want to learn/struggle with: {uncomfortable}
+- Self-assessed level: {difficulty}
+
+GOALS & MOTIVATION:
+- Why they want to learn: {goals}
+- Specific focus areas: {domains}
+- Timeline: {timeline}
+
+YOUR TASK:
+Create a personalized, practical learning roadmap with specific buildable challenges.
+
+GUIDELINES:
+1. Start from their current level (don't teach what they already know)
+2. Focus on their weak areas: {uncomfortable}
+3. Align with their goals: {goals}
+4. Make challenges PRACTICAL (build real things, not just study)
+5. Create 6-12 challenges organized in 3-4 progressive phases
+6. Each challenge should take 3-15 hours
+
+FORMAT:
+For each challenge, use EXACTLY this format:
+
+CHALLENGE: [Concise, actionable title]
+DIFFICULTY: [beginner/intermediate/advanced]
+HOURS: [estimated hours as a number]
+DESCRIPTION: [2-3 sentences: what they'll build and what they'll learn]
+SKILLS: [comma-separated list of skills taught]
+PREREQUISITES: [comma-separated list of prerequisites, or "none"]
+
+Example:
+CHALLENGE: Build a CLI Task Manager
+DIFFICULTY: intermediate
+HOURS: 6
+DESCRIPTION: Create a command-line task management app with file persistence. Learn file I/O, data structures, and CLI design patterns. Users can add, list, complete, and delete tasks.
+SKILLS: file I/O, JSON handling, CLI design, data persistence
+PREREQUISITES: basic Python, functions, dictionaries
+
+Now create the roadmap:"""
+        
+        try:
+            # Generate with Claude
+            roadmap_response = self.claude.chat(roadmap_prompt, include_memories=False)
+            
+            print("\n" + "="*60)
+            print("📋 YOUR PERSONALIZED LEARNING ROADMAP")
+            print("="*60)
+            print()
+            print(roadmap_response)
+            print()
+            print("="*60)
+            
+            # Ask to proceed
+            proceed = input("\n💾 Create skill and add these challenges? (y/n): ").strip().lower()
+            
+            if proceed != 'y':
+                print("Cancelled. Roadmap not saved.")
+                return
+            
+            # Create skill
+            skill_id = self.learning.add_skill(skill_name, category, difficulty)
+            
+            # Save context
+            cursor = self.learning.conn.cursor()
+            cursor.execute("""
+                UPDATE learning_skills
+                SET current_level = ?,
+                    goals = ?,
+                    timeline = ?,
+                    roadmap_generated = 1
+                WHERE id = ?
+            """, (
+                f"Knows: {current_level}\nComfortable: {comfortable}\nWants to learn: {uncomfortable}",
+                f"Goals: {goals}\nFocus areas: {domains}",
+                timeline,
+                skill_id
+            ))
+            self.learning.conn.commit()
+            
+            # Parse and create challenges
+            print("\n🔄 Parsing and creating challenges...")
+            
+            challenges_created = self._parse_and_create_challenges(roadmap_response, skill_id)
+            
+            print(f"\n✅ Skill created: {skill_name}")
+            print(f"✅ Added {challenges_created} challenges")
+            print(f"✅ Learning roadmap saved")
+            
+            # Show first recommendation
+            print("\n" + "-"*60)
+            recommendation = self.learning.get_recommended_challenge(skill_id)
+            
+            if recommendation:
+                print(f"\n🎯 Your first recommended challenge:")
+                print(f"   {recommendation['challenge']['title']}")
+                print()
+                
+                start = input("Start this challenge now? (y/n): ").strip().lower()
+                
+                if start == 'y':
+                    self.learning.start_challenge(recommendation['challenge']['id'])
+                    print("\n✅ Challenge started!")
+                    print("💡 Use 'build' → 'Continue challenge' to work on it")
+            
+        except Exception as e:
+            print(f"\n❌ Error generating roadmap: {e}")
+            print("You can still add the skill and challenges manually.")
+    
+    def _generate_roadmap_for_existing_skill(self, skill_id: int, skill_name: str):
+        """Generate AI roadmap for an existing skill (preserves existing challenges)"""
+        
+        print("\n" + "="*60)
+        print(f"🤖 Generate Learning Roadmap: {skill_name}")
+        print("="*60)
+        
+        print("\nI'll create a personalized learning roadmap for this skill.")
+        print("✅ Your existing challenges and progress will be PRESERVED.")
+        print("✅ New challenges will be ADDED alongside existing ones.")
+        print()
+        
+        proceed = input("Continue? (y/n): ").strip().lower()
+        if proceed != 'y':
+            return
+        
+        # Show existing challenges
+        existing_challenges = self.learning.get_all_challenges(skill_id=skill_id)
+        existing_titles = [c['title'] for c in existing_challenges]
+        
+        if existing_titles:
+            print(f"\n📋 You already have {len(existing_titles)} challenge(s):")
+            for i, title in enumerate(existing_titles[:5], 1):
+                print(f"  {i}. {title}")
+            if len(existing_titles) > 5:
+                print(f"  ... and {len(existing_titles) - 5} more")
+            print()
+        
+        # Interview
+        print("-"*60)
+        print("📊 CURRENT LEVEL ASSESSMENT")
+        print("-"*60)
+        
+        current_level = input(f"\nWhat do you already know about {skill_name}?\n(Be specific)\n\n> ").strip()
+        
+        comfortable = input(f"\nWhat are you COMFORTABLE with?\n\n> ").strip()
+        
+        uncomfortable = input(f"\nWhat do you want to learn or struggle with?\n\n> ").strip()
+        
+        print("\n" + "-"*60)
+        print("🎯 GOALS & OBJECTIVES")
+        print("-"*60)
+        
+        goals = input(f"\nWhy do you want to master {skill_name}?\n\n> ").strip()
+        
+        domains = input(f"\nSpecific areas or technologies?\n\n> ").strip()
+        
+        timeline = input(f"\nTimeline?\n\n> ").strip()
+        
+        # Generate roadmap
+        print("\n🤔 Generating personalized roadmap...")
+        
+        existing_challenges_text = "\n".join([f"- {title}" for title in existing_titles]) if existing_titles else "None yet"
+        
+        roadmap_prompt = f"""You are a learning path designer. A user wants to improve: {skill_name}
+
+EXISTING CHALLENGES (already created - DO NOT DUPLICATE):
+{existing_challenges_text}
+
+CURRENT LEVEL:
+- What they know: {current_level}
+- Comfortable with: {comfortable}
+- Want to improve: {uncomfortable}
+
+GOALS:
+- Why they want to learn: {goals}
+- Focus areas: {domains}
+- Timeline: {timeline}
+
+YOUR TASK:
+Create NEW challenges that:
+1. Do NOT duplicate existing challenges
+2. Fill gaps in their knowledge (focus on: {uncomfortable})
+3. Align with their goals ({domains})
+4. Progress from their current level toward mastery
+
+Provide 5-10 new practical challenges.
+
+FORMAT (use EXACTLY this format):
+
+CHALLENGE: [Title]
+DIFFICULTY: [beginner/intermediate/advanced]
+HOURS: [number]
+DESCRIPTION: [What they'll build and learn, 2-3 sentences]
+SKILLS: [skill1, skill2, skill3]
+PREREQUISITES: [prereq1, prereq2] (or "none")"""
+        
+        try:
+            roadmap_response = self.claude.chat(roadmap_prompt, include_memories=False)
+            
+            print("\n" + "="*60)
+            print("📋 NEW CHALLENGES FOR YOUR ROADMAP")
+            print("="*60)
+            print()
+            print(roadmap_response)
+            print()
+            print("="*60)
+            
+            save = input("\n💾 Add these challenges to your skill? (y/n): ").strip().lower()
+            
+            if save != 'y':
+                print("Cancelled.")
+                return
+            
+            # Update skill with roadmap context
+            cursor = self.learning.conn.cursor()
+            cursor.execute("""
+                UPDATE learning_skills
+                SET current_level = ?,
+                    goals = ?,
+                    timeline = ?,
+                    roadmap_generated = 1
+                WHERE id = ?
+            """, (
+                f"Knows: {current_level}\nComfortable: {comfortable}\nWants to learn: {uncomfortable}",
+                f"Goals: {goals}\nFocus areas: {domains}",
+                timeline,
+                skill_id
+            ))
+            self.learning.conn.commit()
+            
+            # Parse and create new challenges
+            print("\n🔄 Creating new challenges...")
+            
+            new_challenges = self._parse_and_create_challenges(roadmap_response, skill_id)
+            
+            print(f"\n✅ Added {new_challenges} new challenges")
+            print(f"✅ Preserved {len(existing_challenges)} existing challenges")
+            print(f"✅ Total challenges: {len(existing_challenges) + new_challenges}")
+            print(f"✅ Roadmap context saved")
+            
+        except Exception as e:
+            print(f"\n❌ Error: {e}")
+    
+    def _parse_and_create_challenges(self, roadmap_text: str, skill_id: int) -> int:
+        """Parse Claude's roadmap response and create challenges in database"""
+        import re
+        
+        challenges_created = 0
+        
+        print("\n🔄 Parsing challenges...")
+        
+        # Split by CHALLENGE: marker
+        # Handle both "CHALLENGE:" and "**CHALLENGE:**" formats
+        challenge_blocks = re.split(r'(?:^|\n)\**CHALLENGE:\s*', roadmap_text, flags=re.MULTILINE)
+        
+        if len(challenge_blocks) <= 1:
+            print("⚠️  No CHALLENGE: markers found")
+            return 0
+        
+        print(f"   Found {len(challenge_blocks)-1} challenge(s)")
+        
+        for block in challenge_blocks[1:]:  # Skip first split (text before first CHALLENGE)
+            try:
+                # Clean markdown formatting helper
+                def clean_text(text):
+                    if not text:
+                        return ""
+                    # Remove all asterisks (bold/italic markdown)
+                    text = re.sub(r'\*+', '', text)
+                    # Collapse whitespace
+                    text = ' '.join(text.split())
+                    return text.strip()
+                
+                # Extract title (first line)
+                title_match = re.search(r'^(.+?)(?:\n|$)', block)
+                if not title_match:
+                    continue
+                
+                title = clean_text(title_match.group(1))
+                if not title or len(title) < 3:
+                    continue
+                
+                # Extract difficulty (case insensitive, handles **bold** format)
+                difficulty_match = re.search(r'DIFFICULTY:\s*(.+?)(?:\n|$)', block, re.IGNORECASE)
+                if difficulty_match:
+                    difficulty = clean_text(difficulty_match.group(1)).lower()
+                    if difficulty not in ['beginner', 'intermediate', 'advanced']:
+                        difficulty = 'intermediate'
+                else:
+                    difficulty = 'intermediate'
+                
+                # Extract hours
+                hours_match = re.search(r'HOURS?:\s*(\d+)', block, re.IGNORECASE)
+                hours = int(hours_match.group(1)) if hours_match else 5
+                
+                # Extract description
+                description_match = re.search(
+                    r'DESCRIPTION:\s*(.+?)(?:\n\s*(?:SKILLS?:|PREREQUISITES?:|CHALLENGE:|$))',
+                    block,
+                    re.DOTALL | re.IGNORECASE
+                )
+                if description_match:
+                    description = clean_text(description_match.group(1))
+                else:
+                    description = title
+                
+                # Limit description length
+                if len(description) > 500:
+                    description = description[:497] + "..."
+                
+                # Extract skills
+                skills_match = re.search(
+                    r'SKILLS?:\s*(.+?)(?:\n\s*(?:PREREQUISITES?:|CHALLENGE:|$))',
+                    block,
+                    re.IGNORECASE
+                )
+                if skills_match:
+                    skills_text = clean_text(skills_match.group(1))
+                    skills_taught = [s.strip() for s in skills_text.split(',') if s.strip()]
+                else:
+                    skills_taught = []
+                
+                if not skills_taught:
+                    skills_taught = [title]
+                
+                # Extract prerequisites
+                prereqs_match = re.search(
+                    r'PREREQUISITES?:\s*(.+?)(?:\n\s*(?:CHALLENGE:|$))',
+                    block,
+                    re.IGNORECASE
+                )
+                if prereqs_match:
+                    prereqs_text = clean_text(prereqs_match.group(1))
+                    if 'none' in prereqs_text.lower():
+                        prerequisites = []
+                    else:
+                        prerequisites = [p.strip() for p in prereqs_text.split(',') if p.strip()]
+                else:
+                    prerequisites = []
+                
+                # Create challenge in database
+                self.learning.add_challenge(
+                    title=title,
+                    description=description,
+                    skill_id=skill_id,
+                    difficulty=difficulty,
+                    estimated_hours=hours,
+                    skills_taught=skills_taught,
+                    prerequisites=prerequisites,
+                    unlocks=[]
+                )
+                
+                challenges_created += 1
+                print(f"  ✅ {title}")
+            
+            except Exception as e:
+                print(f"  ⚠️  Skipped one challenge (error: {str(e)[:50]})")
+                continue
+        
+        if challenges_created == 0:
+            print("\n⚠️  Could not create any challenges")
+            print("   You can add challenges manually using 'Start new challenge'")
+        
+        return challenges_created
 
 def main():
     """Entry point"""

@@ -43,7 +43,23 @@ class LearningTracker:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+           
+        cursor.execute("PRAGMA table_info(learning_skills)")
+        existing_columns = [row[1] for row in cursor.fetchall()]
+
+        # Add roadmap columns to existing table (safe migration)
+        if 'current_level' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN current_level TEXT")
         
+        if 'goals' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN goals TEXT")
+        
+        if 'timeline' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN timeline TEXT")
+        
+        if 'roadmap_generated' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN roadmap_generated BOOLEAN DEFAULT 0")
+    
         # Learning sessions
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS learning_sessions (
@@ -224,7 +240,7 @@ class LearningTracker:
             LEFT JOIN learning_items li ON s.id = li.skill_id
             WHERE s.status = ?
             GROUP BY s.id
-            ORDER BY s.last_reviewed DESC, s.created_at DESC
+            ORDER BY s.id ASC
         """, (status,))
         return [dict(row) for row in cursor.fetchall()]
     
@@ -1030,3 +1046,246 @@ class LearningTracker:
             'competency_level': level,
             'competency_percent': percent
         }
+
+    def get_recommended_challenge(self, skill_id: int) -> dict:
+        """
+        Get smart recommendation for next challenge based on progression
+        
+        Returns: {
+            'challenge': {...challenge data...},
+            'reason': "Why this challenge now",
+            'unlocks': [...what this enables...],
+            'skill_gap': "What you'll learn"
+        }
+        """
+        import json
+        
+        cursor = self.conn.cursor()
+        
+        # Get completed challenges for this skill
+        cursor.execute("""
+            SELECT title, skills_taught, unlocks
+            FROM learning_challenges
+            WHERE skill_id = ? AND status = 'completed'
+        """, (skill_id,))
+        
+        completed_rows = cursor.fetchall()
+        completed_titles = [row['title'] for row in completed_rows]
+        
+        # Get all skills taught so far
+        skills_learned = set()
+        for row in completed_rows:
+            if row['skills_taught']:
+                taught = json.loads(row['skills_taught'])
+                skills_learned.update(taught)
+        
+        # Get progression stats
+        progression = self.get_skill_progression(skill_id)
+        current_level = progression['competency_level']
+        completed_count = progression['completed'] or 0
+        
+        # Determine appropriate difficulty
+        if completed_count == 0:
+            target_difficulty = 'beginner'
+        elif completed_count < 3:
+            target_difficulty = 'beginner'
+        elif completed_count < 6:
+            target_difficulty = 'intermediate'
+        else:
+            target_difficulty = 'advanced'
+        
+        # Get available challenges
+        cursor.execute("""
+            SELECT * FROM learning_challenges
+            WHERE skill_id = ? 
+            AND status IN ('not_started', 'abandoned')
+            AND difficulty = ?
+            ORDER BY created_at ASC
+        """, (skill_id, target_difficulty))
+        
+        available_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        if not available_challenges:
+            # Try next difficulty up
+            if target_difficulty == 'beginner':
+                target_difficulty = 'intermediate'
+            elif target_difficulty == 'intermediate':
+                target_difficulty = 'advanced'
+            
+            cursor.execute("""
+                SELECT * FROM learning_challenges
+                WHERE skill_id = ? 
+                AND status IN ('not_started', 'abandoned')
+                AND difficulty = ?
+                ORDER BY created_at ASC
+            """, (skill_id, target_difficulty))
+            
+            available_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        if not available_challenges:
+            return None
+        
+        # Score each challenge
+        best_challenge = None
+        best_score = -1
+        best_reason = ""
+        
+        for challenge in available_challenges:
+            score = 0
+            reasons = []
+            
+            # Parse prerequisites
+            prereqs = json.loads(challenge['prerequisites']) if challenge['prerequisites'] else []
+            prereqs_lower = [p.lower() for p in prereqs]
+            
+            # Check prerequisites met
+            prereqs_met = all(
+                any(prereq in skill.lower() for skill in skills_learned)
+                for prereq in prereqs_lower
+            )
+            
+            if not prereqs_met and prereqs:
+                continue
+            
+            # Score based on prerequisites
+            if prereqs and prereqs_met:
+                score += 10
+                reasons.append(f"Prerequisites met: {', '.join(prereqs)}")
+            elif not prereqs:
+                score += 5
+                reasons.append("No prerequisites needed - good starting point")
+            
+            # Score based on difficulty match
+            if challenge['difficulty'] == target_difficulty:
+                score += 8
+                reasons.append(f"Matches your current level ({current_level})")
+            
+            # Score based on new skills
+            skills_taught = json.loads(challenge['skills_taught']) if challenge['skills_taught'] else []
+            new_skills = [s for s in skills_taught if s.lower() not in [sl.lower() for sl in skills_learned]]
+            
+            if new_skills:
+                score += len(new_skills) * 2
+                if len(new_skills) <= 2:
+                    reasons.append(f"Teaches new skills: {', '.join(new_skills)}")
+                else:
+                    reasons.append(f"Teaches {len(new_skills)} new skills")
+            
+            # Score based on unlocks
+            unlocks = json.loads(challenge['unlocks']) if challenge['unlocks'] else []
+            if unlocks:
+                score += len(unlocks) * 3
+                reasons.append(f"Unlocks {len(unlocks)} advanced challenge(s)")
+            
+            # Prefer shorter challenges if just starting
+            if completed_count < 2 and challenge['estimated_hours'] <= 4:
+                score += 3
+                reasons.append("Quick win to build momentum")
+            
+            # Update best
+            if score > best_score:
+                best_score = score
+                best_challenge = challenge
+                best_reason = " • " + "\n • ".join(reasons)
+        
+        if not best_challenge:
+            return None
+        
+        # Parse unlocks
+        unlocks = json.loads(best_challenge['unlocks']) if best_challenge['unlocks'] else []
+        
+        # Determine skill gap
+        skills_taught = json.loads(best_challenge['skills_taught']) if best_challenge['skills_taught'] else []
+        new_skills = [s for s in skills_taught if s.lower() not in [sl.lower() for sl in skills_learned]]
+        
+        if new_skills:
+            skill_gap = f"You'll learn: {', '.join(new_skills)}"
+        else:
+            skill_gap = f"Reinforces: {', '.join(skills_taught[:3])}"
+        
+        return {
+            'challenge': best_challenge,
+            'reason': best_reason,
+            'unlocks': unlocks,
+            'skill_gap': skill_gap,
+            'score': best_score
+        }
+
+    def get_learning_path(self, skill_id: int, max_depth: int = 5) -> list:
+        """
+        Get recommended learning path (sequence of challenges)
+        
+        Returns: [
+            {'challenge': {...}, 'status': 'completed'},
+            {'challenge': {...}, 'status': 'recommended'},
+            ...
+        ]
+        """
+        import json
+        
+        cursor = self.conn.cursor()
+        
+        # Get all challenges for this skill
+        cursor.execute("""
+            SELECT * FROM learning_challenges
+            WHERE skill_id = ?
+            ORDER BY 
+                CASE status
+                    WHEN 'completed' THEN 1
+                    WHEN 'in_progress' THEN 2
+                    WHEN 'not_started' THEN 3
+                    WHEN 'abandoned' THEN 4
+                END,
+                created_at ASC
+        """, (skill_id,))
+        
+        all_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        path = []
+        
+        # Add completed
+        completed = [c for c in all_challenges if c['status'] == 'completed']
+        for c in completed:
+            path.append({
+                'challenge': c,
+                'status': 'completed',
+                'display': '✅'
+            })
+        
+        # Add in-progress
+        in_progress = [c for c in all_challenges if c['status'] == 'in_progress']
+        for c in in_progress:
+            path.append({
+                'challenge': c,
+                'status': 'in_progress',
+                'display': '⚙️'
+            })
+        
+        # Get recommended
+        recommendation = self.get_recommended_challenge(skill_id)
+        
+        if recommendation:
+            rec_challenge = recommendation['challenge']
+            path.append({
+                'challenge': rec_challenge,
+                'status': 'recommended',
+                'display': '🎯',
+                'reason': recommendation['reason']
+            })
+            
+            # Add future challenges
+            unlocks = recommendation['unlocks']
+            if unlocks:
+                not_started = [c for c in all_challenges if c['status'] == 'not_started']
+                for unlock_title in unlocks[:2]:
+                    for c in not_started:
+                        if unlock_title.lower() in c['title'].lower():
+                            path.append({
+                                'challenge': c,
+                                'status': 'future',
+                                'display': '🔒',
+                                'note': f"Unlocked by: {rec_challenge['title']}"
+                            })
+                            break
+        
+        return path[:max_depth]

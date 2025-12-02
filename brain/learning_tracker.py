@@ -43,7 +43,23 @@ class LearningTracker:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+           
+        cursor.execute("PRAGMA table_info(learning_skills)")
+        existing_columns = [row[1] for row in cursor.fetchall()]
+
+        # Add roadmap columns to existing table (safe migration)
+        if 'current_level' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN current_level TEXT")
         
+        if 'goals' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN goals TEXT")
+        
+        if 'timeline' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN timeline TEXT")
+        
+        if 'roadmap_generated' not in existing_columns:
+            self.conn.execute("ALTER TABLE learning_skills ADD COLUMN roadmap_generated BOOLEAN DEFAULT 0")
+    
         # Learning sessions
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS learning_sessions (
@@ -118,7 +134,79 @@ class LearningTracker:
             CREATE INDEX IF NOT EXISTS idx_skills_next_review 
             ON learning_skills(next_review, status)
         """)
+
+        # ===== NEW TABLES FOR CHALLENGE-BASED LEARNING =====
         
+        # Learning challenges (projects to build)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS learning_challenges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                skill_id INTEGER NOT NULL,
+                difficulty TEXT CHECK(difficulty IN ('beginner', 'intermediate', 'advanced')),
+                estimated_hours INTEGER,
+                skills_taught TEXT,
+                prerequisites TEXT,
+                unlocks TEXT,
+                status TEXT DEFAULT 'not_started' CHECK(status IN ('not_started', 'in_progress', 'completed', 'abandoned')),
+                progress_percent INTEGER DEFAULT 0,
+                time_spent INTEGER DEFAULT 0,
+                github_link TEXT,
+                notes TEXT,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (skill_id) REFERENCES learning_skills(id)
+            )
+        """)
+        
+        # Obstacles encountered during challenges
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS challenge_obstacles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                challenge_id INTEGER NOT NULL,
+                obstacle_description TEXT NOT NULL,
+                solution TEXT,
+                insight TEXT,
+                time_to_solve INTEGER,
+                resources_used TEXT,
+                status TEXT DEFAULT 'blocking' CHECK(status IN ('blocking', 'solved', 'workaround')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                solved_at TIMESTAMP,
+                FOREIGN KEY (challenge_id) REFERENCES learning_challenges(id)
+            )
+        """)
+        
+        # Daily building streaks
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_streaks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date DATE UNIQUE NOT NULL,
+                minutes_worked INTEGER DEFAULT 0,
+                challenge_worked_on INTEGER,
+                obstacles_encountered INTEGER DEFAULT 0,
+                obstacles_solved INTEGER DEFAULT 0,
+                maintained_streak BOOLEAN DEFAULT 1,
+                notes TEXT,
+                FOREIGN KEY (challenge_worked_on) REFERENCES learning_challenges(id)
+            )
+        """)
+        
+        # Skill mastery evidence (what you've actually built)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS skill_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_id INTEGER NOT NULL,
+                challenge_id INTEGER NOT NULL,
+                evidence_type TEXT CHECK(evidence_type IN ('project_completed', 'obstacle_overcome', 'concept_applied')),
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (skill_id) REFERENCES learning_skills(id),
+                FOREIGN KEY (challenge_id) REFERENCES learning_challenges(id)
+            )
+        """)
+            
         self.conn.commit()
     
     def add_skill(self, skill_name: str, category: str = None, 
@@ -152,7 +240,7 @@ class LearningTracker:
             LEFT JOIN learning_items li ON s.id = li.skill_id
             WHERE s.status = ?
             GROUP BY s.id
-            ORDER BY s.last_reviewed DESC, s.created_at DESC
+            ORDER BY s.id ASC
         """, (status,))
         return [dict(row) for row in cursor.fetchall()]
     
@@ -504,3 +592,700 @@ class LearningTracker:
     def __del__(self):
         """Cleanup on deletion"""
         self.close()
+
+    # ===== CHALLENGE-BASED LEARNING METHODS =====
+
+    def add_challenge(self, title: str, description: str, skill_id: int, 
+                    difficulty: str, estimated_hours: int, skills_taught: list,
+                    prerequisites: list = None, unlocks: list = None) -> int:
+        """
+        Add a new challenge to the database
+        
+        Returns: challenge_id
+        
+        Why this method:
+        - Allows custom challenges beyond library
+        - User can add their own project ideas
+        - Flexible learning path
+        """
+        import json
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO learning_challenges 
+            (title, description, skill_id, difficulty, estimated_hours, 
+            skills_taught, prerequisites, unlocks)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            title, description, skill_id, difficulty, estimated_hours,
+            json.dumps(skills_taught),
+            json.dumps(prerequisites or []),
+            json.dumps(unlocks or [])
+        ))
+        
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_all_challenges(self, skill_id: int = None, status: str = None) -> list:
+        """
+        Get challenges, optionally filtered by skill or status
+        
+        Why filtering:
+        - View by skill (focus on Python projects)
+        - View by status (what's in progress)
+        - Overview of learning pipeline
+        """
+        import json
+        
+        query = "SELECT * FROM learning_challenges WHERE 1=1"
+        params = []
+        
+        if skill_id:
+            query += " AND skill_id = ?"
+            params.append(skill_id)
+        
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        
+        query += " ORDER BY created_at DESC"
+        
+        cursor = self.conn.cursor()
+        cursor.execute(query, params)
+        
+        challenges = []
+        for row in cursor.fetchall():
+            challenge = dict(row)
+            # Parse JSON fields
+            challenge['skills_taught'] = json.loads(challenge['skills_taught']) if challenge['skills_taught'] else []
+            challenge['prerequisites'] = json.loads(challenge['prerequisites']) if challenge['prerequisites'] else []
+            challenge['unlocks'] = json.loads(challenge['unlocks']) if challenge['unlocks'] else []
+            challenges.append(challenge)
+        
+        return challenges
+
+    def start_challenge(self, challenge_id: int) -> bool:
+        """
+        Mark challenge as started
+        
+        Why separate method:
+        - Clear action (starting != just viewing)
+        - Timestamp when started
+        - Analytics on completion time
+        """
+        from datetime import datetime
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE learning_challenges
+            SET status = 'in_progress',
+                started_at = ?
+            WHERE id = ?
+        """, (datetime.now(), challenge_id))
+        
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def update_challenge_progress(self, challenge_id: int, progress_percent: int,
+                                time_spent_minutes: int = 0, notes: str = None) -> bool:
+        """
+        Update progress on a challenge
+        
+        Why track progress:
+        - See how far you've come
+        - Motivating
+        - Understand time investment
+        """
+        cursor = self.conn.cursor()
+        
+        # Get current time spent
+        cursor.execute("SELECT time_spent FROM learning_challenges WHERE id = ?", (challenge_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        
+        current_time = row['time_spent'] or 0
+        new_time = current_time + time_spent_minutes
+        
+        update_query = """
+            UPDATE learning_challenges
+            SET progress_percent = ?,
+                time_spent = ?
+        """
+        params = [progress_percent, new_time]
+        
+        if notes:
+            update_query += ", notes = ?"
+            params.append(notes)
+        
+        update_query += " WHERE id = ?"
+        params.append(challenge_id)
+        
+        cursor.execute(update_query, params)
+        self.conn.commit()
+        
+        return cursor.rowcount > 0
+
+    def complete_challenge(self, challenge_id: int, github_link: str = None,
+                        final_notes: str = None) -> bool:
+        """
+        Mark challenge as completed
+        
+        Why this matters:
+        - Official completion = skill proven
+        - GitHub link = portfolio evidence
+        - Final notes = capture learnings
+        """
+        from datetime import datetime
+        
+        cursor = self.conn.cursor()
+        
+        update_query = """
+            UPDATE learning_challenges
+            SET status = 'completed',
+                completed_at = ?,
+                progress_percent = 100
+        """
+        params = [datetime.now()]
+        
+        if github_link:
+            update_query += ", github_link = ?"
+            params.append(github_link)
+        
+        if final_notes:
+            update_query += ", notes = COALESCE(notes || '\n\n', '') || ?"
+            params.append(f"Final notes: {final_notes}")
+        
+        update_query += " WHERE id = ?"
+        params.append(challenge_id)
+        
+        cursor.execute(update_query, params)
+        self.conn.commit()
+        
+        # Add skill evidence
+        cursor.execute("SELECT skill_id FROM learning_challenges WHERE id = ?", (challenge_id,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("""
+                INSERT INTO skill_evidence (skill_id, challenge_id, evidence_type, description)
+                VALUES (?, ?, 'project_completed', 'Completed full challenge')
+            """, (row['skill_id'], challenge_id))
+            self.conn.commit()
+        
+        return True
+
+    def log_obstacle(self, challenge_id: int, description: str) -> int:
+        """
+        Log an obstacle encountered during a challenge
+        
+        Why this is THE MOST IMPORTANT method:
+        - Obstacles = where real learning happens
+        - Track what blocks you
+        - Build obstacle-solving library
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO challenge_obstacles
+            (challenge_id, obstacle_description, status)
+            VALUES (?, ?, 'blocking')
+        """, (challenge_id, description))
+        
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def solve_obstacle(self, obstacle_id: int, solution: str, insight: str = None,
+                    time_to_solve: int = None, resources_used: str = None) -> bool:
+        """
+        Mark obstacle as solved with solution details
+        
+        Why capture this:
+        - Solution = reference for future
+        - Insight = deeper understanding
+        - Time = track problem-solving skill growth
+        - Resources = know what helps you learn
+        """
+        from datetime import datetime
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE challenge_obstacles
+            SET solution = ?,
+                insight = ?,
+                time_to_solve = ?,
+                resources_used = ?,
+                status = 'solved',
+                solved_at = ?
+            WHERE id = ?
+        """, (solution, insight, time_to_solve, resources_used, datetime.now(), obstacle_id))
+        
+        self.conn.commit()
+        
+        # Add skill evidence for obstacle overcome
+        cursor.execute("""
+            SELECT co.challenge_id, lc.skill_id
+            FROM challenge_obstacles co
+            JOIN learning_challenges lc ON co.challenge_id = lc.id
+            WHERE co.id = ?
+        """, (obstacle_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("""
+                INSERT INTO skill_evidence (skill_id, challenge_id, evidence_type, description)
+                VALUES (?, ?, 'obstacle_overcome', ?)
+            """, (row['skill_id'], row['challenge_id'], solution[:200]))
+            self.conn.commit()
+        
+        return True
+
+    def get_obstacles_for_challenge(self, challenge_id: int) -> list:
+        """Get all obstacles for a specific challenge"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM challenge_obstacles
+            WHERE challenge_id = ?
+            ORDER BY created_at DESC
+        """, (challenge_id,))
+        
+        return [dict(row) for row in cursor.fetchall()]
+
+    def search_past_obstacles(self, keyword: str) -> list:
+        """
+        Search past obstacles and solutions
+        
+        Why this is powerful:
+        - "I've solved this before!"
+        - Build personal Stack Overflow
+        - Learn from past you
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT co.*, lc.title as challenge_title, ls.skill_name
+            FROM challenge_obstacles co
+            JOIN learning_challenges lc ON co.challenge_id = lc.id
+            JOIN learning_skills ls ON lc.skill_id = ls.id
+            WHERE co.obstacle_description LIKE ? OR co.solution LIKE ?
+            ORDER BY co.solved_at DESC
+        """, (f'%{keyword}%', f'%{keyword}%'))
+        
+        return [dict(row) for row in cursor.fetchall()]
+
+    def log_daily_streak(self, minutes_worked: int, challenge_id: int = None,
+                        obstacles_encountered: int = 0, obstacles_solved: int = 0,
+                        notes: str = None) -> bool:
+        """
+        Log daily building activity
+        
+        Why daily logging:
+        - Build consistency habit
+        - Track streaks
+        - See patterns in productivity
+        """
+        from datetime import date
+        
+        cursor = self.conn.cursor()
+        
+        # Check if today already logged
+        cursor.execute("SELECT id FROM daily_streaks WHERE date = ?", (date.today(),))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing
+            cursor.execute("""
+                UPDATE daily_streaks
+                SET minutes_worked = minutes_worked + ?,
+                    obstacles_encountered = obstacles_encountered + ?,
+                    obstacles_solved = obstacles_solved + ?,
+                    notes = COALESCE(notes || '\n', '') || COALESCE(?, '')
+                WHERE date = ?
+            """, (minutes_worked, obstacles_encountered, obstacles_solved, notes, date.today()))
+        else:
+            # Insert new
+            cursor.execute("""
+                INSERT INTO daily_streaks
+                (date, minutes_worked, challenge_worked_on, obstacles_encountered, 
+                obstacles_solved, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (date.today(), minutes_worked, challenge_id, obstacles_encountered,
+                obstacles_solved, notes))
+        
+        self.conn.commit()
+        return True
+
+    def get_streak_stats(self) -> dict:
+        """
+        Get streak statistics
+        
+        Returns: current streak, longest streak, total days
+        
+        Why this matters:
+        - Gamification = motivation
+        - Visible progress
+        - Don't break the chain!
+        """
+        from datetime import date, timedelta
+        
+        cursor = self.conn.cursor()
+        
+        # Get all streak days
+        cursor.execute("""
+            SELECT date FROM daily_streaks
+            WHERE maintained_streak = 1
+            ORDER BY date DESC
+        """)
+        
+        dates = [row['date'] for row in cursor.fetchall()]
+        
+        if not dates:
+            return {'current_streak': 0, 'longest_streak': 0, 'total_days': 0}
+        
+        # Calculate current streak
+        current_streak = 0
+        check_date = date.today()
+        
+        for streak_date in dates:
+            if isinstance(streak_date, str):
+                streak_date = date.fromisoformat(streak_date)
+            
+            if streak_date == check_date:
+                current_streak += 1
+                check_date -= timedelta(days=1)
+            else:
+                break
+        
+        # Calculate longest streak
+        longest_streak = 1
+        current_run = 1
+        
+        for i in range(len(dates) - 1):
+            date1 = date.fromisoformat(dates[i]) if isinstance(dates[i], str) else dates[i]
+            date2 = date.fromisoformat(dates[i+1]) if isinstance(dates[i+1], str) else dates[i+1]
+            
+            if (date1 - date2).days == 1:
+                current_run += 1
+                longest_streak = max(longest_streak, current_run)
+            else:
+                current_run = 1
+        
+        return {
+            'current_streak': current_streak,
+            'longest_streak': longest_streak,
+            'total_days': len(dates)
+        }
+
+    def get_skill_progression(self, skill_id: int) -> dict:
+        """
+        Get skill progression based on challenges completed
+        
+        Returns evidence of competency, not just time spent
+        
+        Why this approach:
+        - Completed projects = proof
+        - Obstacles overcome = depth
+        - Clear progression path
+        """
+        cursor = self.conn.cursor()
+        
+        # Get challenges for this skill
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_challenges,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+                SUM(time_spent) as total_minutes
+            FROM learning_challenges
+            WHERE skill_id = ?
+        """, (skill_id,))
+        
+        challenge_stats = dict(cursor.fetchone())
+        
+        # Get obstacles for this skill
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_obstacles,
+                SUM(CASE WHEN co.status = 'solved' THEN 1 ELSE 0 END) as solved_obstacles
+            FROM challenge_obstacles co
+            JOIN learning_challenges lc ON co.challenge_id = lc.id
+            WHERE lc.skill_id = ?
+        """, (skill_id,))
+        
+        obstacle_stats = dict(cursor.fetchone())
+        
+        # Get skill evidence
+        cursor.execute("""
+            SELECT COUNT(*) as evidence_count
+            FROM skill_evidence
+            WHERE skill_id = ?
+        """, (skill_id,))
+        
+        evidence = cursor.fetchone()['evidence_count']
+        
+        # Calculate competency level (simple heuristic)
+        completed = challenge_stats['completed'] or 0
+        
+        if completed >= 10:
+            level = 'advanced'
+            percent = 90
+        elif completed >= 5:
+            level = 'intermediate'
+            percent = 70
+        elif completed >= 2:
+            level = 'beginner+'
+            percent = 50
+        elif completed >= 1:
+            level = 'beginner'
+            percent = 30
+        else:
+            level = 'just_starting'
+            percent = 10
+        
+        return {
+            **challenge_stats,
+            **obstacle_stats,
+            'evidence_count': evidence,
+            'competency_level': level,
+            'competency_percent': percent
+        }
+
+    def get_recommended_challenge(self, skill_id: int) -> dict:
+        """
+        Get smart recommendation for next challenge based on progression
+        
+        Returns: {
+            'challenge': {...challenge data...},
+            'reason': "Why this challenge now",
+            'unlocks': [...what this enables...],
+            'skill_gap': "What you'll learn"
+        }
+        """
+        import json
+        
+        cursor = self.conn.cursor()
+        
+        # Get completed challenges for this skill
+        cursor.execute("""
+            SELECT title, skills_taught, unlocks
+            FROM learning_challenges
+            WHERE skill_id = ? AND status = 'completed'
+        """, (skill_id,))
+        
+        completed_rows = cursor.fetchall()
+        completed_titles = [row['title'] for row in completed_rows]
+        
+        # Get all skills taught so far
+        skills_learned = set()
+        for row in completed_rows:
+            if row['skills_taught']:
+                taught = json.loads(row['skills_taught'])
+                skills_learned.update(taught)
+        
+        # Get progression stats
+        progression = self.get_skill_progression(skill_id)
+        current_level = progression['competency_level']
+        completed_count = progression['completed'] or 0
+        
+        # Determine appropriate difficulty
+        if completed_count == 0:
+            target_difficulty = 'beginner'
+        elif completed_count < 3:
+            target_difficulty = 'beginner'
+        elif completed_count < 6:
+            target_difficulty = 'intermediate'
+        else:
+            target_difficulty = 'advanced'
+        
+        # Get available challenges
+        cursor.execute("""
+            SELECT * FROM learning_challenges
+            WHERE skill_id = ? 
+            AND status IN ('not_started', 'abandoned')
+            AND difficulty = ?
+            ORDER BY created_at ASC
+        """, (skill_id, target_difficulty))
+        
+        available_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        if not available_challenges:
+            # Try next difficulty up
+            if target_difficulty == 'beginner':
+                target_difficulty = 'intermediate'
+            elif target_difficulty == 'intermediate':
+                target_difficulty = 'advanced'
+            
+            cursor.execute("""
+                SELECT * FROM learning_challenges
+                WHERE skill_id = ? 
+                AND status IN ('not_started', 'abandoned')
+                AND difficulty = ?
+                ORDER BY created_at ASC
+            """, (skill_id, target_difficulty))
+            
+            available_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        if not available_challenges:
+            return None
+        
+        # Score each challenge
+        best_challenge = None
+        best_score = -1
+        best_reason = ""
+        
+        for challenge in available_challenges:
+            score = 0
+            reasons = []
+            
+            # Parse prerequisites
+            prereqs = json.loads(challenge['prerequisites']) if challenge['prerequisites'] else []
+            prereqs_lower = [p.lower() for p in prereqs]
+            
+            # Check prerequisites met
+            prereqs_met = all(
+                any(prereq in skill.lower() for skill in skills_learned)
+                for prereq in prereqs_lower
+            )
+            
+            if not prereqs_met and prereqs:
+                continue
+            
+            # Score based on prerequisites
+            if prereqs and prereqs_met:
+                score += 10
+                reasons.append(f"Prerequisites met: {', '.join(prereqs)}")
+            elif not prereqs:
+                score += 5
+                reasons.append("No prerequisites needed - good starting point")
+            
+            # Score based on difficulty match
+            if challenge['difficulty'] == target_difficulty:
+                score += 8
+                reasons.append(f"Matches your current level ({current_level})")
+            
+            # Score based on new skills
+            skills_taught = json.loads(challenge['skills_taught']) if challenge['skills_taught'] else []
+            new_skills = [s for s in skills_taught if s.lower() not in [sl.lower() for sl in skills_learned]]
+            
+            if new_skills:
+                score += len(new_skills) * 2
+                if len(new_skills) <= 2:
+                    reasons.append(f"Teaches new skills: {', '.join(new_skills)}")
+                else:
+                    reasons.append(f"Teaches {len(new_skills)} new skills")
+            
+            # Score based on unlocks
+            unlocks = json.loads(challenge['unlocks']) if challenge['unlocks'] else []
+            if unlocks:
+                score += len(unlocks) * 3
+                reasons.append(f"Unlocks {len(unlocks)} advanced challenge(s)")
+            
+            # Prefer shorter challenges if just starting
+            if completed_count < 2 and challenge['estimated_hours'] <= 4:
+                score += 3
+                reasons.append("Quick win to build momentum")
+            
+            # Update best
+            if score > best_score:
+                best_score = score
+                best_challenge = challenge
+                best_reason = " • " + "\n • ".join(reasons)
+        
+        if not best_challenge:
+            return None
+        
+        # Parse unlocks
+        unlocks = json.loads(best_challenge['unlocks']) if best_challenge['unlocks'] else []
+        
+        # Determine skill gap
+        skills_taught = json.loads(best_challenge['skills_taught']) if best_challenge['skills_taught'] else []
+        new_skills = [s for s in skills_taught if s.lower() not in [sl.lower() for sl in skills_learned]]
+        
+        if new_skills:
+            skill_gap = f"You'll learn: {', '.join(new_skills)}"
+        else:
+            skill_gap = f"Reinforces: {', '.join(skills_taught[:3])}"
+        
+        return {
+            'challenge': best_challenge,
+            'reason': best_reason,
+            'unlocks': unlocks,
+            'skill_gap': skill_gap,
+            'score': best_score
+        }
+
+    def get_learning_path(self, skill_id: int, max_depth: int = 5) -> list:
+        """
+        Get recommended learning path (sequence of challenges)
+        
+        Returns: [
+            {'challenge': {...}, 'status': 'completed'},
+            {'challenge': {...}, 'status': 'recommended'},
+            ...
+        ]
+        """
+        import json
+        
+        cursor = self.conn.cursor()
+        
+        # Get all challenges for this skill
+        cursor.execute("""
+            SELECT * FROM learning_challenges
+            WHERE skill_id = ?
+            ORDER BY 
+                CASE status
+                    WHEN 'completed' THEN 1
+                    WHEN 'in_progress' THEN 2
+                    WHEN 'not_started' THEN 3
+                    WHEN 'abandoned' THEN 4
+                END,
+                created_at ASC
+        """, (skill_id,))
+        
+        all_challenges = [dict(row) for row in cursor.fetchall()]
+        
+        path = []
+        
+        # Add completed
+        completed = [c for c in all_challenges if c['status'] == 'completed']
+        for c in completed:
+            path.append({
+                'challenge': c,
+                'status': 'completed',
+                'display': '✅'
+            })
+        
+        # Add in-progress
+        in_progress = [c for c in all_challenges if c['status'] == 'in_progress']
+        for c in in_progress:
+            path.append({
+                'challenge': c,
+                'status': 'in_progress',
+                'display': '⚙️'
+            })
+        
+        # Get recommended
+        recommendation = self.get_recommended_challenge(skill_id)
+        
+        if recommendation:
+            rec_challenge = recommendation['challenge']
+            path.append({
+                'challenge': rec_challenge,
+                'status': 'recommended',
+                'display': '🎯',
+                'reason': recommendation['reason']
+            })
+            
+            # Add future challenges
+            unlocks = recommendation['unlocks']
+            if unlocks:
+                not_started = [c for c in all_challenges if c['status'] == 'not_started']
+                for unlock_title in unlocks[:2]:
+                    for c in not_started:
+                        if unlock_title.lower() in c['title'].lower():
+                            path.append({
+                                'challenge': c,
+                                'status': 'future',
+                                'display': '🔒',
+                                'note': f"Unlocked by: {rec_challenge['title']}"
+                            })
+                            break
+        
+        return path[:max_depth]

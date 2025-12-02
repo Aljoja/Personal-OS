@@ -1117,12 +1117,14 @@ class PersonalOS:
             print("  2. Continue challenge")
             print("  3. Log obstacle")
             print("  4. View skill progression")
-            print("  5. Search past obstacles")
-            print("  6. View all challenges")
+            print("  5. Get recommendation 🎯")
+            print("  6. View learning path 🗺️")
+            print("  7. Search past obstacles")
+            print("  8. View all challenges")
             print("  0. Back to main menu")
             
             choice = input("\nChoice: ").strip()
-            
+
             if choice == '0':
                 break
             elif choice == '1':
@@ -1134,8 +1136,12 @@ class PersonalOS:
             elif choice == '4':
                 self._view_skill_progression()
             elif choice == '5':
-                self._search_obstacles()
+                self._get_recommendation()
             elif choice == '6':
+                self._view_learning_path()
+            elif choice == '7':
+                self._search_obstacles()
+            elif choice == '8':
                 self._view_all_challenges()
             else:
                 print("❌ Invalid choice")
@@ -1981,6 +1987,192 @@ PREREQUISITES: [prereq1, prereq2] (or "none")"""
             print("   You can add challenges manually using 'Start new challenge'")
         
         return challenges_created
+    
+    def _get_recommendation(self):
+        """Get smart recommendation for next challenge"""
+        
+        # Get user's skills
+        skills = self.learning.get_all_skills()
+        
+        if not skills:
+            print("\n⚠️  No skills found. Add a skill first with 'learn' command.")
+            return
+        
+        # Show skills
+        print("\n" + "="*60)
+        print("🎯 Smart Challenge Recommendation")
+        print("="*60)
+        
+        print("\nYour skills:")
+        for idx, skill in enumerate(skills, 1):
+            progression = self.learning.get_skill_progression(skill['id'])
+            print(f"  {idx}. {skill['skill_name']} - {progression['competency_level']} ({progression['completed'] or 0} completed)")
+        
+        # Select skill
+        try:
+            choice = input("\nGet recommendation for which skill? (number or 0 to cancel): ").strip()
+            if choice == '0':
+                return
+            
+            skill_idx = int(choice) - 1
+            if skill_idx < 0 or skill_idx >= len(skills):
+                print("❌ Invalid choice")
+                return
+            
+            selected_skill = skills[skill_idx]
+        except (ValueError, IndexError):
+            print("❌ Invalid choice")
+            return
+        
+        # Get recommendation
+        print(f"\n🤔 Analyzing your progress in {selected_skill['skill_name']}...")
+        
+        recommendation = self.learning.get_recommended_challenge(selected_skill['id'])
+        
+        if not recommendation:
+            print(f"\n⚠️  No recommendations available")
+            print("\n💡 This might mean:")
+            print("  • All challenges completed! 🎉")
+            print("  • No challenges created yet")
+            print("  • Prerequisites not met for remaining challenges")
+            return
+        
+        challenge = recommendation['challenge']
+        
+        # Display recommendation
+        print("\n" + "="*60)
+        print("🎯 RECOMMENDED CHALLENGE")
+        print("="*60)
+        
+        print(f"\n📝 {challenge['title']}")
+        print(f"⏱️  Estimated time: {challenge['estimated_hours']} hours")
+        print(f"📊 Difficulty: {challenge['difficulty'].title()}")
+        
+        print(f"\n💡 Why this challenge now:")
+        print(recommendation['reason'])
+        
+        print(f"\n📚 {recommendation['skill_gap']}")
+        
+        if recommendation['unlocks']:
+            print(f"\n🔓 Unlocks:")
+            for unlock in recommendation['unlocks']:
+                print(f"  • {unlock}")
+        
+        print(f"\n📖 Description:")
+        print(challenge['description'])
+        
+        # Offer to start
+        print("\n" + "-"*60)
+        start = input("\n🚀 Start this challenge now? (y/n): ").strip().lower()
+        
+        if start == 'y':
+            self.learning.start_challenge(challenge['id'])
+            print(f"\n✅ Challenge started!")
+            print(f"💡 Use 'build' → 'Continue challenge' to work on it")
+        else:
+            print("\n💭 No problem! The recommendation will be here when you're ready.")
+
+    def _view_learning_path(self):
+        """View recommended learning path for a skill"""
+        
+        # Get user's skills
+        skills = self.learning.get_all_skills()
+        
+        if not skills:
+            print("\n⚠️  No skills found. Add a skill first with 'learn' command.")
+            return
+        
+        # Show skills
+        print("\n" + "="*60)
+        print("🗺️  Learning Path Visualization")
+        print("="*60)
+        
+        print("\nYour skills:")
+        for idx, skill in enumerate(skills, 1):
+            progression = self.learning.get_skill_progression(skill['id'])
+            print(f"  {idx}. {skill['skill_name']} - {progression['competency_level']}")
+        
+        # Select skill
+        try:
+            choice = input("\nView path for which skill? (number or 0 to cancel): ").strip()
+            if choice == '0':
+                return
+            
+            skill_idx = int(choice) - 1
+            if skill_idx < 0 or skill_idx >= len(skills):
+                print("❌ Invalid choice")
+                return
+            
+            selected_skill = skills[skill_idx]
+        except (ValueError, IndexError):
+            print("❌ Invalid choice")
+            return
+        
+        # Get learning path
+        path = self.learning.get_learning_path(selected_skill['id'])
+        
+        if not path:
+            print(f"\n⚠️  No learning path available for {selected_skill['skill_name']}")
+            print("💡 Add challenges first using 'Start new challenge' or generate a roadmap")
+            return
+        
+        # Display path
+        print("\n" + "="*60)
+        print(f"🗺️  {selected_skill['skill_name']} Learning Path")
+        print("="*60)
+        
+        for idx, step in enumerate(path):
+            challenge = step['challenge']
+            display = step['display']
+            status = step['status']
+            
+            print(f"\n{display} {challenge['title']}")
+            print(f"   Difficulty: {challenge['difficulty'].title()} | Est: {challenge['estimated_hours']}h")
+            
+            if status == 'completed':
+                print(f"   Status: Completed ✅")
+                if challenge['completed_at']:
+                    print(f"   Completed: {challenge['completed_at'][:10]}")
+            
+            elif status == 'in_progress':
+                print(f"   Status: In Progress ({challenge['progress_percent']}%)")
+                print(f"   Time spent: {challenge['time_spent'] // 60}h {challenge['time_spent'] % 60}m")
+            
+            elif status == 'recommended':
+                print(f"   Status: RECOMMENDED 🎯")
+                if 'reason' in step:
+                    print(f"\n   Why now:")
+                    for line in step['reason'].split('\n'):
+                        print(f"   {line}")
+            
+            elif status == 'future':
+                print(f"   Status: Future (locked)")
+                if 'note' in step:
+                    print(f"   {step['note']}")
+            
+            # Show arrow to next (except last)
+            if idx < len(path) - 1:
+                print("       ↓")
+        
+        print("\n" + "="*60)
+        print("\nLegend:")
+        print("  ✅ Completed")
+        print("  ⚙️  In Progress")
+        print("  🎯 Recommended Next")
+        print("  🔒 Future (locked)")
+        
+        # If there's a recommendation, offer to start
+        recommended = [s for s in path if s['status'] == 'recommended']
+        if recommended:
+            print("\n" + "-"*60)
+            start = input("\n🚀 Start the recommended challenge? (y/n): ").strip().lower()
+            
+            if start == 'y':
+                rec_challenge = recommended[0]['challenge']
+                self.learning.start_challenge(rec_challenge['id'])
+                print(f"\n✅ Challenge started!")
+                print(f"💡 Use 'build' → 'Continue challenge' to work on it")
+
 
 def main():
     """Entry point"""

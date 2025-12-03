@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
+import pyperclip
 import json
 
 
@@ -154,6 +155,7 @@ class LearningTracker:
                 time_spent INTEGER DEFAULT 0,
                 github_link TEXT,
                 notes TEXT,
+                start_prompt TEXT,
                 started_at TIMESTAMP,
                 completed_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -666,15 +668,37 @@ class LearningTracker:
 
     def start_challenge(self, challenge_id: int) -> bool:
         """
-        Mark challenge as started
+        Mark challenge as started AND generate Claude.ai prompt
         
-        Why separate method:
-        - Clear action (starting != just viewing)
-        - Timestamp when started
-        - Analytics on completion time
+        Why combined:
+        - One action does both (update status + help user start)
+        - Better UX (automatic prompt generation)
+        - Encourages using Claude.ai for guidance
         """
         from datetime import datetime
         
+        # 1. Generate and copy prompt FIRST (before updating status)
+        prompt = self._generate_challenge_start_prompt(challenge_id)
+        
+        if not prompt:
+            print("\n❌ Challenge not found")
+            return False
+        
+        # 2. Copy to clipboard
+        if self._copy_to_clipboard(prompt):
+            print("\n✅ Challenge prompt copied to clipboard!")
+            print("\n📋 Next steps:")
+            print("1. Go to claude.ai")
+            print("2. Create new Project or Chat")
+            print("3. Paste prompt (Ctrl+V)")
+            print("4. Start building!")
+        else:
+            print("\n📋 Here's your prompt (copy manually):\n")
+            print("="*60)
+            print(prompt)
+            print("="*60)
+        
+        # 3. Update challenge status (original functionality)
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE learning_challenges
@@ -684,6 +708,9 @@ class LearningTracker:
         """, (datetime.now(), challenge_id))
         
         self.conn.commit()
+        
+        input("\nPress Enter to continue...")
+        
         return cursor.rowcount > 0
 
     def update_challenge_progress(self, challenge_id: int, progress_percent: int,
@@ -1289,3 +1316,97 @@ class LearningTracker:
                             break
         
         return path[:max_depth]
+
+    def _generate_challenge_start_prompt(self, challenge_id):
+        """Generate starter prompt for Claude.ai"""
+        challenge = self.cursor.execute("""
+            SELECT lc.*, ls.name as skill_name, ls.current_level
+            FROM learning_challenges lc
+            JOIN learning_skills ls ON lc.skill_id = ls.id
+            WHERE lc.id = ?
+        """, (challenge_id,)).fetchone()
+        
+        if not challenge:
+            return None
+        
+        # Get prerequisites
+        prereqs = challenge['prerequisites'].split(',') if challenge['prerequisites'] and challenge['prerequisites'] != 'none' else []
+        skills = challenge['skills_taught'].split(',') if challenge['skills_taught'] else []
+        
+        prompt = f"""# Challenge: {challenge['title']}
+
+    ## Context
+    I'm working on this challenge as part of my {challenge['skill_name']} learning path.
+
+    **Difficulty:** {challenge['difficulty']}
+    **Estimated Time:** {challenge['estimated_hours']} hours
+    **Current Skill Level:** {challenge['current_level']}
+
+    ## Challenge Description
+    {challenge['description']}
+
+    ## Skills I'll Practice
+    {', '.join(skills)}
+
+    ## Prerequisites I've Completed
+    {', '.join(prereqs) if prereqs else 'None - this is a foundational challenge'}
+
+    ## What I Need Help With
+    - Code review and best practices
+    - Debugging when stuck
+    - Understanding concepts as I go
+    - Suggestions for testing
+    - Guidance on project structure
+
+    ## My Approach
+    I'll work through this step-by-step and ask questions when stuck. Please act as a mentor/code reviewer rather than just giving me solutions.
+
+    Let's start! First, help me break this challenge into concrete steps."""
+        
+        return prompt
+
+    def _copy_to_clipboard(self, text):
+        """Copy text to clipboard (Windows)"""
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            return True
+        except ImportError:
+            print("\n⚠️  pyperclip not installed. Run: pip install pyperclip")
+            return False
+        except Exception as e:
+            print(f"\n⚠️  Clipboard copy failed: {e}")
+            return False
+
+    def _start_challenge_with_prompt(self, challenge_id):
+        """Start challenge and generate Claude.ai project prompt"""
+        # Generate prompt
+        prompt = self._generate_challenge_start_prompt(challenge_id)
+        
+        if not prompt:
+            print("\n❌ Challenge not found")
+            return
+        
+        # Copy to clipboard
+        if self._copy_to_clipboard(prompt):
+            print("\n✅ Challenge prompt copied to clipboard!")
+            print("\n📋 Next steps:")
+            print("1. Go to claude.ai")
+            print("2. Create new Project or Chat")
+            print("3. Paste prompt (Ctrl+V)")
+            print("4. Start building!")
+        else:
+            print("\n📋 Here's your prompt:\n")
+            print("="*60)
+            print(prompt)
+            print("="*60)
+        
+        # Update challenge status
+        self.cursor.execute("""
+            UPDATE learning_challenges 
+            SET status = 'in_progress', started_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (challenge_id,))
+        self.conn.commit()
+        
+        input("\nPress Enter to continue...")

@@ -1146,7 +1146,7 @@ class PersonalOS:
             else:
                 print("❌ Invalid choice")
 
-    def _start_new_challenge(self, challenge_lib):
+    def _start_new_challenge(self, challenge_lib): # TODO: fix - still using challenge_lib
         """Browse and start a new challenge"""
         
         print("\n" + "="*60)
@@ -1159,14 +1159,17 @@ class PersonalOS:
             print("\n⚠️  No skills found. Add a skill first with 'learn' command.")
             return
         
+        # Sort by ID
+        skills = sorted(skills, key=lambda s: s['id'])
+
         # Show skills
         print("\nYour skills:")
-        for idx, skill in enumerate(skills, 1):
+        for skill in skills:
             # Get progression for this skill
             progression = self.learning.get_skill_progression(skill['id'])
             level = progression['competency_level']
             completed = progression['completed'] or 0
-            print(f"  {idx}. {skill['skill_name']} - {level} ({completed} completed)")
+            print(f"  {skill['id']}. {skill['skill_name']} - {level} ({completed} completed)")
         
         # Select skill
         try:
@@ -1174,48 +1177,26 @@ class PersonalOS:
             if choice == '0':
                 return
             
-            skill_idx = int(choice) - 1
-            if skill_idx < 0 or skill_idx >= len(skills):
+            skill_id = int(choice)
+            if skill_id < 0 or skill_id >= len(skills):
                 print("❌ Invalid choice")
                 return
             
-            selected_skill = skills[skill_idx]
+            # selected_skill = skills[skill_idx]
         except (ValueError, IndexError):
             print("❌ Invalid choice")
             return
         
-        # Map skill name to challenge category
-        # (You'll need to map your skill names to challenge categories)
-        skill_name_lower = selected_skill['skill_name'].lower()
-        
-        if 'python' in skill_name_lower:
-            category = 'python'
-        elif 'data' in skill_name_lower or 'analysis' in skill_name_lower:
-            category = 'data_analysis'
-        elif 'machine' in skill_name_lower or 'ml' in skill_name_lower:
-            category = 'machine_learning'
-        elif 'digital' in skill_name_lower or 'iot' in skill_name_lower:
-            category = 'digitalization'
-        else:
-            # Show all categories
-            category = None
-        
-        # Get challenges
-        if category:
-            challenges = challenge_lib.get_challenges_for_skill(category)
-        else:
-            all_challenges = challenge_lib.get_all_challenges()
-            challenges = []
-            for cat, chals in all_challenges.items():
-                challenges.extend([{**c, 'category': cat} for c in chals])
+        # Get all challenges
+        challenges = self.learning.get_all_challenges(skill_id=skill_id, status='not_started')
         
         if not challenges:
-            print(f"\n⚠️  No challenges found for {selected_skill['skill_name']}")
+            print(f"\n⚠️  No challenges found for {skills[skill_id]['skill_name']}")
             print("💡 You can add custom challenges!")
             return
         
         # Show challenges
-        print(f"\n📋 Challenges for {selected_skill['skill_name']}:")
+        print(f"\n📋 Challenges for {skills[skill_id]['skill_name']}:")
         print()
         
         for idx, challenge in enumerate(challenges, 1):
@@ -1263,7 +1244,7 @@ class PersonalOS:
             challenge_id = self.learning.add_challenge(
                 title=selected_challenge['title'],
                 description=selected_challenge['description'],
-                skill_id=selected_skill['id'],
+                skill_id=skills[skill_id]['id'],
                 difficulty=selected_challenge['difficulty'],
                 estimated_hours=selected_challenge['estimated_hours'],
                 skills_taught=selected_challenge['skills_taught'],

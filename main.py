@@ -1121,6 +1121,7 @@ class PersonalOS:
             print("  6. View learning path 🗺️")
             print("  7. Search past obstacles")
             print("  8. View all challenges")
+            print("  9. View saved prompt 📄")
             print("  0. Back to main menu")
             
             choice = input("\nChoice: ").strip()
@@ -1143,10 +1144,12 @@ class PersonalOS:
                 self._search_obstacles()
             elif choice == '8':
                 self._view_all_challenges()
+            elif choice == '9':
+                self.learning._view_saved_prompt()
             else:
                 print("❌ Invalid choice")
 
-    def _start_new_challenge(self, challenge_lib): # TODO: fix - still using challenge_lib
+    def _start_new_challenge(self):
         """Browse and start a new challenge"""
         
         print("\n" + "="*60)
@@ -1191,12 +1194,12 @@ class PersonalOS:
         challenges = self.learning.get_all_challenges(skill_id=skill_id, status='not_started')
         
         if not challenges:
-            print(f"\n⚠️  No challenges found for {skills[skill_id]['skill_name']}")
+            print(f"\n⚠️  No challenges found for {skills[skill_id - 1]['skill_name']}")
             print("💡 You can add custom challenges!")
             return
         
         # Show challenges
-        print(f"\n📋 Challenges for {skills[skill_id]['skill_name']}:")
+        print(f"\n📋 Challenges for {skills[skill_id - 1]['skill_name']}:")
         print()
         
         for idx, challenge in enumerate(challenges, 1):
@@ -1240,17 +1243,19 @@ class PersonalOS:
         start = input("\n🚀 Start this challenge? (y/n): ").strip().lower()
         
         if start == 'y':
-            # Add to database
-            challenge_id = self.learning.add_challenge(
-                title=selected_challenge['title'],
-                description=selected_challenge['description'],
-                skill_id=skills[skill_id]['id'],
-                difficulty=selected_challenge['difficulty'],
-                estimated_hours=selected_challenge['estimated_hours'],
-                skills_taught=selected_challenge['skills_taught'],
-                prerequisites=selected_challenge['prerequisites'],
-                unlocks=selected_challenge.get('unlocks', [])
-            )
+            # # Add to database # TODO: It's duplicating challenges here - How to get challenge id otherwise?
+            # challenge_id = self.learning.add_challenge(
+            #     title=selected_challenge['title'],
+            #     description=selected_challenge['description'],
+            #     skill_id=skills[skill_id]['id'],
+            #     difficulty=selected_challenge['difficulty'],
+            #     estimated_hours=selected_challenge['estimated_hours'],
+            #     skills_taught=selected_challenge['skills_taught'],
+            #     prerequisites=selected_challenge['prerequisites'],
+            #     unlocks=selected_challenge.get('unlocks', [])
+            # )
+
+            challenge_id = selected_challenge['id']
             
             # Start challenge
             self.learning.start_challenge(challenge_id)

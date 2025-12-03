@@ -703,9 +703,10 @@ class LearningTracker:
         cursor.execute("""
             UPDATE learning_challenges
             SET status = 'in_progress',
-                started_at = ?
+                started_at = ?,
+                start_prompt = ?
             WHERE id = ?
-        """, (datetime.now(), challenge_id))
+        """, (datetime.now(), prompt, challenge_id))
         
         self.conn.commit()
         
@@ -1319,8 +1320,9 @@ class LearningTracker:
 
     def _generate_challenge_start_prompt(self, challenge_id):
         """Generate starter prompt for Claude.ai"""
-        challenge = self.cursor.execute("""
-            SELECT lc.*, ls.name as skill_name, ls.current_level
+        cursor = self.conn.cursor() # TODO: the skill Ids are skillid + 1 need to fix for all challenges
+        challenge = cursor.execute("""
+            SELECT lc.*, ls.skill_name as skill_name, ls.current_level
             FROM learning_challenges lc
             JOIN learning_skills ls ON lc.skill_id = ls.id
             WHERE lc.id = ?
@@ -1408,5 +1410,77 @@ class LearningTracker:
             WHERE id = ?
         """, (challenge_id,))
         self.conn.commit()
+        
+        input("\nPress Enter to continue...")
+
+    def _view_saved_prompt(self):
+        """View and copy saved challenge prompt"""
+        
+        # Get challenges with saved prompts
+        cursor = self.conn.cursor()
+        challenges = cursor.execute("""
+            SELECT id, title, status, start_prompt
+            FROM learning_challenges
+            WHERE start_prompt IS NOT NULL
+            ORDER BY 
+                CASE status 
+                    WHEN 'in_progress' THEN 1 
+                    WHEN 'completed' THEN 2 
+                    ELSE 3 
+                END,
+                started_at DESC
+        """).fetchall()
+        
+        if not challenges:
+            print("\n📋 No challenges with saved prompts yet")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Display challenges grouped by status
+        print("\n" + "="*60)
+        print("📋 SAVED CHALLENGE PROMPTS")
+        print("="*60)
+        
+        in_progress = [c for c in challenges if c['status'] == 'in_progress']
+        completed = [c for c in challenges if c['status'] == 'completed']
+        
+        idx = 1
+        challenge_map = {}
+        
+        if in_progress:
+            print("\n🔨 In Progress:")
+            for c in in_progress:
+                print(f"  {idx}. {c['title']}")
+                challenge_map[idx] = c
+                idx += 1
+        
+        if completed:
+            print("\n✅ Completed:")
+            for c in completed:
+                print(f"  {idx}. {c['title']}")
+                challenge_map[idx] = c
+                idx += 1
+        
+        print("\n" + "="*60)
+        choice = input("\nSelect challenge to view prompt (or 'q' to cancel): ").strip()
+        
+        if choice.lower() == 'q':
+            return
+        
+        try:
+            selected = challenge_map[int(choice)]
+            
+            print(f"\n📋 Prompt for: {selected['title']}")
+            print("="*60)
+            
+            if self._copy_to_clipboard(selected['start_prompt']):
+                print("\n✅ Prompt copied to clipboard!")
+                print("\nYou can now paste it in Claude.ai")
+            else:
+                print("\n" + selected['start_prompt'])
+                print("\n" + "="*60)
+            
+        except (KeyError, ValueError):
+            print("\n❌ Invalid selection")
         
         input("\nPress Enter to continue...")
